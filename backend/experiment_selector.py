@@ -206,7 +206,7 @@ def print_recommendation(ranked_experiments, heading="RECOMMENDED NEXT EXPERIMEN
     if not ranked_experiments:
         print("\n" + heading)
         print("No eligible experiments remain.")
-        return
+        return None
 
     recommended = ranked_experiments[0]
     recommended_experiment = recommended["experiment"]
@@ -233,6 +233,8 @@ def print_recommendation(ranked_experiments, heading="RECOMMENDED NEXT EXPERIMEN
         recommended["time"],
     )
 
+    return recommended
+
 
 def print_current_state():
     print_node_uncertainties()
@@ -248,9 +250,68 @@ def print_node_state(node):
     print("Uncertainty:", round(calculate_uncertainty(node), 2))
 
 
+def run_interactive_session():
+    round_number = 1
+
+    while True:
+        print("\n===== ROUND", str(round_number), "=====")
+        print_node_uncertainties()
+        ranked_experiments = rank_experiments()
+        print_rankings(ranked_experiments)
+        recommended = print_recommendation(ranked_experiments)
+
+        if recommended is None:
+            break
+
+        recommended_experiment = recommended["experiment"]
+        result = input(
+            "\nEnter result for "
+            + recommended_experiment["name"]
+            + " (positive/negative/inconclusive/quit): "
+        ).strip().lower()
+
+        if result == "quit":
+            print("Ending session.")
+            break
+
+        if result not in ["positive", "negative", "inconclusive"]:
+            print("Result must be positive, negative, inconclusive, or quit.")
+            continue
+
+        experiment, node_before_update, node_after_update = update_node_from_result(
+            recommended_experiment["id"],
+            result,
+        )
+
+        print("\nSUBMITTED RESULT")
+        print("Experiment:", experiment["name"])
+        print("Result:", result)
+
+        print("\nNODE BEFORE UPDATE")
+        print_node_state(node_before_update)
+
+        print("\nNODE AFTER UPDATE")
+        print_node_state(node_after_update)
+
+        print("\nRecalculating with updated in-memory state...")
+        updated_ranked_experiments = rank_experiments()
+        print_rankings(updated_ranked_experiments, "Updated ranked experiment scores")
+        print_recommendation(updated_ranked_experiments, "UPDATED RECOMMENDED NEXT EXPERIMENT")
+
+        if not updated_ranked_experiments:
+            break
+
+        round_number = round_number + 1
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Rank experiments and optionally ingest one experimental result."
+    )
+    parser.add_argument(
+        "--session",
+        action="store_true",
+        help="Run an interactive multi-round in-memory research session.",
     )
     parser.add_argument("experiment_id", nargs="?")
     parser.add_argument("result", nargs="?", choices=["positive", "negative", "inconclusive"])
@@ -267,6 +328,10 @@ def main():
     print("Drug:", scenario["drug"])
     print("Disease:", scenario["disease"])
     print("Number of experiments:", len(scenario["experiments"]))
+
+    if args.session:
+        run_interactive_session()
+        return
 
     if args.experiment_id is None and args.result is None:
         print_current_state()

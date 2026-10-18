@@ -46,14 +46,25 @@
     },
 
     {
+     "id": "exposure",
+      "name": "Clinically Achievable Exposure",
+      "question": "Can Drug X reach an effective concentration at a clinically achievable dose?",
+      "status": "uncertain",
+     "confidence": 0.45,
+     "depends_on": [],
+      "downstream": ["viability"]
+    },
+
+    {
       "id": "viability",
       "name": "Repurposing Viability",
       "question": "Should this repurposing candidate advance?",
       "status": "unexplored",
       "confidence": 0.2,
-      "depends_on": ["efficacy", "safety"],
+      "depends_on": ["efficacy", "safety", "exposure"],
       "downstream": []
     }
+
   ],
 
 "experiments": [
@@ -80,6 +91,14 @@
     "cost": 4,
     "time": 2,
     "discriminating_power": 0.8
+  },
+  {
+    "id": "exposure_assay",
+    "name": "Exposure / PK Assessment",
+    "tests_node": "exposure",
+    "cost": 3,
+    "time": 2,
+    "discriminating_power": 0.9
   }
 ]
 
