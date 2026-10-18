@@ -100,6 +100,20 @@ def is_experiment_eligible(experiment):
         )
         return False
 
+    for prerequisite_node_id in node["depends_on"]:
+        prerequisite_node = find_node(prerequisite_node_id)
+
+        if prerequisite_node["status"] != "supported":
+            print(
+                "Skipping",
+                experiment["name"],
+                "because prerequisite",
+                prerequisite_node["name"],
+                "has status",
+                prerequisite_node["status"],
+            )
+            return False
+
     return True
 
 
