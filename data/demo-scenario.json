@@ -1,0 +1,86 @@
+{
+  "scenario_id": "demo-001",
+  "drug": "Drug X",
+  "disease": "Disease Y",
+  "goal": "Determine whether Drug X should advance as a repurposing candidate for Disease Y",
+
+  "nodes": [
+    {
+      "id": "mechanism",
+      "name": "Mechanism of Action",
+      "question": "Is the proposed mechanism biologically plausible?",
+      "status": "supported",
+      "confidence": 0.8,
+      "depends_on": [],
+      "downstream": ["target_engagement"]
+    },
+
+    {
+      "id": "target_engagement",
+      "name": "Target Engagement",
+      "question": "Does Drug X engage the proposed target?",
+      "status": "uncertain",
+      "confidence": 0.4,
+      "depends_on": ["mechanism"],
+      "downstream": ["efficacy"]
+    },
+
+    {
+      "id": "efficacy",
+      "name": "Efficacy",
+      "question": "Does target engagement produce the desired disease-relevant effect?",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": ["target_engagement"],
+      "downstream": ["viability"]
+    },
+
+    {
+      "id": "safety",
+      "name": "Safety",
+      "question": "Is the drug safe at the required exposure?",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [],
+      "downstream": ["viability"]
+    },
+
+    {
+      "id": "viability",
+      "name": "Repurposing Viability",
+      "question": "Should this repurposing candidate advance?",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": ["efficacy", "safety"],
+      "downstream": []
+    }
+  ],
+
+"experiments": [
+    {
+    "id": "target_engagement_assay",
+    "name": "Target Engagement Assay",
+    "tests_node": "target_engagement",
+    "cost": 2,
+    "time": 1,
+    "discriminating_power": 0.9
+  },
+  {
+    "id": "efficacy_assay",
+    "name": "Cell Efficacy Assay",
+    "tests_node": "efficacy",
+    "cost": 3,
+    "time": 2,
+    "discriminating_power": 0.8
+  },
+  {
+    "id": "toxicity_assay",
+    "name": "Toxicity Assay",
+    "tests_node": "safety",
+    "cost": 4,
+    "time": 2,
+    "discriminating_power": 0.8
+  }
+]
+
+}
