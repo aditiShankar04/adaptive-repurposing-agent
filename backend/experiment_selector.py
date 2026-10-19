@@ -826,7 +826,68 @@ def print_final_decisions():
     return final_decisions
 
 
-def update_node_from_result(experiment_id, result):
+def normalize_qc(qc):
+    if qc is None or qc == "":
+        return "pass"
+
+    normalized_qc = qc.strip().lower()
+
+    if normalized_qc not in ["pass", "questionable", "fail"]:
+        raise ValueError("QC must be pass, questionable, or fail")
+
+    return normalized_qc
+
+
+def build_qc_update_details(experiment, result, qc, state_updated):
+    details = {
+        "qc": qc,
+        "state_updated": state_updated,
+        "reason": "",
+        "recommended_action": "",
+    }
+
+    if qc == "pass":
+        details["reason"] = "This result is trusted enough to update the decision graph."
+
+        if result == "inconclusive" and experiment.get("inconclusive_action") == "repeat":
+            details["state_updated"] = False
+            details["reason"] = "The result is inconclusive, so the tested node remains unresolved."
+            details["recommended_action"] = "REPEAT " + experiment["name"]
+
+        return details
+
+    details["state_updated"] = False
+
+    if qc == "questionable":
+        details["reason"] = (
+            "This evidence needs confirmation before it can support pruning, "
+            "restriction, or candidate-level conclusions."
+        )
+        details["recommended_action"] = "REPEAT / CONFIRM " + experiment["name"]
+        return details
+
+    details["reason"] = "This result is not trustworthy enough to change the decision graph."
+    details["recommended_action"] = "REPEAT / TROUBLESHOOT " + experiment["name"]
+    return details
+
+
+def print_qc_update_details(update_details):
+    print("\nQC VERDICT:", update_details["qc"].upper())
+
+    if update_details["state_updated"]:
+        print("Scientific state updated.")
+    else:
+        print("Scientific state NOT updated.")
+
+    print("\nReason:")
+    print(update_details["reason"])
+
+    if update_details["recommended_action"]:
+        print("\nRecommended action:")
+        print(update_details["recommended_action"])
+
+
+def update_node_from_result(experiment_id, result, qc="pass"):
     experiment = find_experiment(experiment_id)
 
     if experiment is None:
@@ -838,6 +899,19 @@ def update_node_from_result(experiment_id, result):
         raise ValueError("Experiment tests unknown node: " + experiment["tests_node"])
 
     node_before_update = node.copy()
+    normalized_qc = normalize_qc(qc)
+    update_details = build_qc_update_details(
+        experiment,
+        result,
+        normalized_qc,
+        True,
+    )
+
+    if normalized_qc in ["questionable", "fail"]:
+        return experiment, node_before_update, node, update_details
+
+    if result == "inconclusive" and experiment.get("inconclusive_action") == "repeat":
+        return experiment, node_before_update, node, update_details
 
     if result == "positive":
         node["confidence"] = min(node["confidence"] + 0.5, 1)
@@ -850,7 +924,7 @@ def update_node_from_result(experiment_id, result):
     else:
         raise ValueError("Result must be positive, negative, or inconclusive")
 
-    return experiment, node_before_update, node
+    return experiment, node_before_update, node, update_details
 
 
 def rank_experiments():
@@ -1075,14 +1149,29 @@ def run_interactive_session():
             print("Result must be positive, negative, inconclusive, or quit.")
             continue
 
-        experiment, node_before_update, node_after_update = update_node_from_result(
+        qc = input(
+            "Enter QC for "
+            + recommended_experiment["name"]
+            + " (pass/questionable/fail) [pass]: "
+        ).strip().lower()
+
+        if qc == "":
+            qc = "pass"
+
+        if qc not in ["pass", "questionable", "fail"]:
+            print("QC must be pass, questionable, fail, or blank for pass.")
+            continue
+
+        experiment, node_before_update, node_after_update, update_details = update_node_from_result(
             recommended_experiment["id"],
             result,
+            qc,
         )
 
         print("\nSUBMITTED RESULT")
         print("Experiment:", experiment["name"])
         print("Result:", result)
+        print_qc_update_details(update_details)
 
         print("\nNODE BEFORE UPDATE")
         print_node_state(node_before_update)
@@ -1127,6 +1216,7 @@ def parse_args():
     )
     parser.add_argument("experiment_id", nargs="?")
     parser.add_argument("result", nargs="?", choices=["positive", "negative", "inconclusive"])
+    parser.add_argument("qc", nargs="?", default="pass")
 
     return parser.parse_args()
 
@@ -1165,14 +1255,16 @@ def main():
     previous_ranked_experiments = rank_experiments()
     print_recommendation(previous_ranked_experiments, "PREVIOUS RECOMMENDATION")
 
-    experiment, node_before_update, node_after_update = update_node_from_result(
+    experiment, node_before_update, node_after_update, update_details = update_node_from_result(
         args.experiment_id,
         args.result,
+        args.qc,
     )
 
     print("\nSUBMITTED RESULT")
     print("Experiment:", experiment["name"])
     print("Result:", args.result)
+    print_qc_update_details(update_details)
 
     print("\nNODE BEFORE UPDATE")
     print_node_state(node_before_update)
