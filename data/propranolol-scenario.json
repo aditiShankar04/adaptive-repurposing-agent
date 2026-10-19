@@ -1,0 +1,280 @@
+{
+  "scenario_id": "propranolol-ih-historical-001",
+  "scenario_type": "historical_replay",
+  "drug": "Propranolol",
+  "disease": "Infantile hemangioma",
+  "goal": "Determine whether propranolol should advance as a systemic treatment for proliferating infantile hemangioma while distinguishing candidate-level from mechanism-level failures.",
+  "replay": {
+    "mode": "mechanism_focused_historical_replay",
+    "known_final_outcome": "GO",
+    "known_final_outcome_hidden_from_planner": true,
+    "description": "Begin with an early clinical signal; reveal later historical evidence only after the planner selects an experiment."
+  },
+  "nodes": [
+    {
+      "id": "clinical_signal",
+      "name": "Clinical Treatment Signal",
+      "question": "Does propranolol produce a real treatment effect in infantile hemangioma?",
+      "node_type": "candidate_gate",
+      "status": "supported",
+      "confidence": 0.7,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "candidate"
+    },
+    {
+      "id": "beta_mechanism",
+      "name": "Beta-Adrenergic Mechanism",
+      "question": "Is beta-adrenergic signaling an important mediator of propranolol's anti-IH effect?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.45,
+      "depends_on": [
+        "clinical_signal"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "cellular_effect"
+      ],
+      "failure_scope": "branch",
+      "alternative_group": "mechanistic_support"
+    },
+    {
+      "id": "beta_independent",
+      "name": "Beta-Independent Activity",
+      "question": "Is there meaningful anti-IH activity independent of strong beta-adrenergic blockade?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.35,
+      "depends_on": [
+        "clinical_signal"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "sox18",
+        "cellular_effect"
+      ],
+      "failure_scope": "branch",
+      "alternative_group": "mechanistic_support"
+    },
+    {
+      "id": "sox18",
+      "name": "SOX18 Mechanism",
+      "question": "Does R(+) propranolol engage and inhibit SOX18 function in a way relevant to infantile hemangioma?",
+      "node_type": "mechanism_subbranch",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "beta_independent"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "cellular_effect"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "cellular_effect",
+      "name": "Disease-Relevant Cellular Effect",
+      "question": "Does at least one supported mechanism inhibit HemSC/endothelial differentiation or other disease-relevant vascular behavior?",
+      "node_type": "biological_gate",
+      "status": "uncertain",
+      "confidence": 0.35,
+      "depends_on": [
+        "beta_mechanism",
+        "beta_independent",
+        "sox18"
+      ],
+      "dependency_logic": "any",
+      "downstream": [
+        "in_vivo_effect"
+      ],
+      "failure_scope": "path"
+    },
+    {
+      "id": "in_vivo_effect",
+      "name": "In-Vivo Disease-Relevant Effect",
+      "question": "Does the anti-IH effect reduce disease-relevant vessel formation in an in-vivo model?",
+      "node_type": "translational_gate",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "cellular_effect"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "path"
+    },
+    {
+      "id": "safety",
+      "name": "Pediatric Safety and Tolerability",
+      "question": "Is an effective propranolol regimen tolerable and manageable in infants with appropriate monitoring?",
+      "node_type": "candidate_gate",
+      "status": "uncertain",
+      "confidence": 0.45,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "regimen_or_population"
+    },
+    {
+      "id": "viability",
+      "name": "Clinical Viability",
+      "question": "Should propranolol advance as a systemic treatment for proliferating infantile hemangioma?",
+      "node_type": "final_decision",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "clinical_signal",
+        "in_vivo_effect",
+        "safety"
+      ],
+      "dependency_logic": "all",
+      "downstream": [],
+      "failure_scope": "candidate",
+      "decision_states": [
+        "GO",
+        "NO-GO",
+        "MORE EVIDENCE",
+        "RESTRICT"
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "id": "exp_beta_signaling",
+      "name": "HemSC Beta-AR / cAMP / MAPK Functional Assay",
+      "tests_node": "beta_mechanism",
+      "cost": 2,
+      "time": 1,
+      "discriminating_power": 0.8,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "prune",
+      "negative_scope": "beta_mechanism",
+      "inconclusive_action": "repeat"
+    },
+    {
+      "id": "exp_enantiomer",
+      "name": "R(+) vs Racemic/S(-) Propranolol Functional Comparison",
+      "tests_node": "beta_independent",
+      "cost": 3,
+      "time": 1,
+      "discriminating_power": 0.95,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "prune",
+      "negative_scope": "beta_independent",
+      "inconclusive_action": "repeat"
+    },
+    {
+      "id": "exp_sox18",
+      "name": "SOX18 Target-Engagement / Transcription Assay",
+      "tests_node": "sox18",
+      "cost": 3,
+      "time": 2,
+      "discriminating_power": 0.95,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "prune",
+      "negative_scope": "sox18",
+      "inconclusive_action": "repeat"
+    },
+    {
+      "id": "exp_diff",
+      "name": "HemSC Endothelial Differentiation / Vasculogenesis Assay",
+      "tests_node": "cellular_effect",
+      "cost": 3,
+      "time": 2,
+      "discriminating_power": 0.85,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "reprioritize",
+      "negative_scope": "cellular_effect",
+      "inconclusive_action": "repeat"
+    },
+    {
+      "id": "exp_xenograft",
+      "name": "Patient-Derived IH Vessel-Formation / Xenograft Model",
+      "tests_node": "in_vivo_effect",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.85,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "repeat_or_prune",
+      "negative_scope": "in_vivo_effect",
+      "inconclusive_action": "repeat"
+    },
+    {
+      "id": "exp_safety",
+      "name": "Pediatric Dose / Safety Assessment",
+      "tests_node": "safety",
+      "cost": 5,
+      "time": 4,
+      "discriminating_power": 0.9,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "restrict",
+      "negative_scope": "regimen_or_population",
+      "inconclusive_action": "repeat"
+    },
+    {
+      "id": "exp_clinical_confirm",
+      "name": "Randomized Propranolol vs Placebo Efficacy Trial",
+      "tests_node": "clinical_signal",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 1.0,
+      "historical_result": "positive",
+      "historical_result_hidden": true,
+      "positive_action": "advance",
+      "negative_action": "kill",
+      "negative_scope": "candidate",
+      "inconclusive_action": "more_evidence"
+    }
+  ],
+  "historical_ground_truth": {
+    "final_decision": "GO",
+    "clinical_efficacy": {
+      "selected_regimen": "3 mg/kg/day for 6 months",
+      "complete_or_nearly_complete_resolution_week_24": {
+        "propranolol": 0.6,
+        "placebo": 0.04
+      },
+      "improvement_by_week_5": {
+        "propranolol": 0.88,
+        "placebo": 0.05
+      }
+    },
+    "planner_visibility": "Hidden until the corresponding experiment result is revealed."
+  },
+  "planner_rules": {
+    "dependency_semantics": {
+      "all": "All required dependencies must remain viable.",
+      "any": "At least one dependency/alternative route must remain viable.",
+      "none": "No prerequisite."
+    },
+    "kill_guardrail": "Mechanism-level failures cannot automatically kill the candidate; candidate kill requires trustworthy candidate-level evidence.",
+    "qc_guardrail": "QUESTIONABLE or FAIL QC cannot trigger candidate kill."
+  },
+  "assumptions": [
+    "Cost/time values are normalized hackathon values, not literature-derived costs/durations.",
+    "Experiment ordering is a decision-oriented reconstruction, not exact historical chronology.",
+    "R(+) propranolol/SOX18 evidence is preclinical; racemic propranolol is the established clinical therapy.",
+    "Beta-dependent and beta-independent mechanisms are not assumed mutually exclusive."
+  ]
+}
