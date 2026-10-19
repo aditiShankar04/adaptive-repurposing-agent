@@ -292,6 +292,47 @@ def apply_hypothetical_result(scenario_state, experiment, result):
         )
         return
 
+    if result == "negative" and action == "kill":
+        node["status"] = "contradicted"
+        node["confidence"] = max(node["confidence"] - 0.5, 0)
+
+        if experiment.get("negative_scope") == "candidate":
+            scenario_state["_candidate_killed"] = True
+            record_hypothetical_note(
+                scenario_state,
+                "Negative result for "
+                + experiment["name"]
+                + " uses kill semantics: candidate-level final-decision reachability fails.",
+            )
+        else:
+            record_hypothetical_note(
+                scenario_state,
+                "Negative result for "
+                + experiment["name"]
+                + " uses scoped kill semantics without candidate termination.",
+            )
+
+        return
+
+    if result == "negative" and action == "reprioritize":
+        node["confidence"] = max(node["confidence"] - 0.2, 0)
+        record_hypothetical_note(
+            scenario_state,
+            "Negative result for "
+            + experiment["name"]
+            + " uses reprioritize semantics: confidence is reduced but path remains viable.",
+        )
+        return
+
+    if result == "negative" and action == "more_evidence":
+        record_hypothetical_note(
+            scenario_state,
+            "Negative result for "
+            + experiment["name"]
+            + " uses more_evidence semantics: path remains unresolved and viable.",
+        )
+        return
+
     node["hypothetical_action_unimplemented"] = action
     record_hypothetical_note(
         scenario_state,
@@ -306,6 +347,7 @@ def apply_hypothetical_result(scenario_state, experiment, result):
 
 
 def summarize_program_state(scenario_state):
+    candidate_killed = scenario_state.get("_candidate_killed", False)
     node_reachability = {
         node["id"]: is_node_potentially_satisfiable_in_state(
             scenario_state,
@@ -313,19 +355,22 @@ def summarize_program_state(scenario_state):
         )
         for node in scenario_state["nodes"]
     }
-    useful_experiment_ids = {
-        experiment["id"]
-        for experiment in scenario_state["experiments"]
-        if (
-            is_experiment_eligible_in_state(scenario_state, experiment)
-            and can_experiment_contribute_to_final_decision_in_state(
-                scenario_state,
-                experiment,
+    if candidate_killed:
+        useful_experiment_ids = set()
+    else:
+        useful_experiment_ids = {
+            experiment["id"]
+            for experiment in scenario_state["experiments"]
+            if (
+                is_experiment_eligible_in_state(scenario_state, experiment)
+                and can_experiment_contribute_to_final_decision_in_state(
+                    scenario_state,
+                    experiment,
+                )
             )
-        )
-    }
+        }
     final_decision_reachability = {
-        node["id"]: is_node_potentially_satisfiable_in_state(
+        node["id"]: False if candidate_killed else is_node_potentially_satisfiable_in_state(
             scenario_state,
             node,
         )
@@ -848,6 +893,9 @@ def build_qc_update_details(experiment, result, qc, state_updated):
         "confirmed_failure": False,
         "confirmed_action": "",
         "confirmed_scope": "",
+        "candidate_failure": False,
+        "action": "",
+        "action_scope": "",
         "terminate_session": False,
         "final_decision": "",
     }
@@ -929,6 +977,53 @@ def mark_confirmed_failure(update_details, experiment, action):
     )
 
 
+def mark_candidate_kill(update_details, experiment, confirmed=False):
+    update_details["state_updated"] = True
+    update_details["candidate_failure"] = True
+    update_details["action"] = "KILL"
+    update_details["action_scope"] = experiment.get("negative_scope", "")
+    update_details["terminate_session"] = True
+    update_details["final_decision"] = "NO-GO"
+
+    if confirmed:
+        mark_confirmed_failure(update_details, experiment, "kill")
+        update_details["reason"] = (
+            update_details["reason"]
+            + " The configured scope is candidate-level, so the session is terminated."
+        )
+    else:
+        update_details["reason"] = (
+            "A trustworthy negative result on this experiment has candidate-level "
+            "scope, so the candidate is terminated by the configured kill action."
+        )
+
+
+def mark_scoped_kill(update_details, experiment):
+    update_details["state_updated"] = True
+    update_details["action"] = "KILL"
+    update_details["action_scope"] = experiment.get("negative_scope", "")
+    update_details["reason"] = (
+        "A trustworthy negative result triggered a scoped kill action. The candidate "
+        "is not automatically terminated because the scope is not candidate-level."
+    )
+
+
+def mark_reprioritize(update_details, experiment):
+    update_details["state_updated"] = True
+    update_details["action"] = "REPRIORITIZE"
+    update_details["action_scope"] = experiment.get("negative_scope", "")
+    update_details["reason"] = (
+        "The result weakens this hypothesis but does not eliminate the path. "
+        "Confidence was reduced by an MVP heuristic amount."
+    )
+
+
+def mark_more_evidence(update_details):
+    update_details["state_updated"] = False
+    update_details["action"] = "MORE EVIDENCE"
+    update_details["reason"] = "The current result is not sufficient for a decisive update."
+
+
 def print_qc_update_details(update_details):
     print("\nQC VERDICT:", update_details["qc"].upper())
 
@@ -944,10 +1039,20 @@ def print_qc_update_details(update_details):
         print("\nRecommended action:")
         print(update_details["recommended_action"])
 
-    if update_details["confirmed_failure"]:
+    if update_details["candidate_failure"] and not update_details["confirmed_failure"]:
+        print("\nCONFIRMED CANDIDATE FAILURE")
+        print("Action:", update_details["action"])
+        print("Scope:", update_details["action_scope"])
+    elif update_details["confirmed_failure"]:
         print("\nCONFIRMED FAILURE")
         print("Action:", update_details["confirmed_action"])
         print("Scope:", update_details["confirmed_scope"])
+
+    if update_details["action"] and not update_details["candidate_failure"]:
+        print("\nACTION:", update_details["action"])
+
+        if update_details["action_scope"]:
+            print("Scope:", update_details["action_scope"])
 
     if update_details["final_decision"]:
         print("\nFINAL DECISION")
@@ -982,6 +1087,33 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
         return experiment, node_before_update, node, update_details
 
     negative_action = experiment.get("negative_action")
+    inconclusive_action = experiment.get("inconclusive_action")
+
+    if result == "negative" and negative_action == "kill":
+        node["confidence"] = max(node["confidence"] - 0.5, 0)
+        node["status"] = "contradicted"
+
+        if experiment.get("negative_scope") == "candidate":
+            mark_candidate_kill(update_details, experiment)
+        else:
+            mark_scoped_kill(update_details, experiment)
+
+        return experiment, node_before_update, node, update_details
+
+    if result == "negative" and negative_action == "reprioritize":
+        node["confidence"] = max(node["confidence"] - 0.2, 0)
+        mark_reprioritize(update_details, experiment)
+        return experiment, node_before_update, node, update_details
+
+    if (
+        result == "negative"
+        and negative_action == "more_evidence"
+    ) or (
+        result == "inconclusive"
+        and inconclusive_action == "more_evidence"
+    ):
+        mark_more_evidence(update_details)
+        return experiment, node_before_update, node, update_details
 
     if result == "negative" and negative_action in ["repeat_or_prune", "repeat_or_kill"]:
         if not has_confirmed_negative_result(result_history, experiment_id):
@@ -997,13 +1129,7 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
         if experiment.get("negative_scope") == "candidate":
             node["confidence"] = max(node["confidence"] - 0.5, 0)
             node["status"] = "contradicted"
-            mark_confirmed_failure(update_details, experiment, "kill")
-            update_details["terminate_session"] = True
-            update_details["final_decision"] = "NO-GO"
-            update_details["reason"] = (
-                update_details["reason"]
-                + " The configured scope is candidate-level, so the session is terminated."
-            )
+            mark_candidate_kill(update_details, experiment, confirmed=True)
             return experiment, node_before_update, node, update_details
 
         mark_confirmation_required(update_details, experiment)
@@ -1413,6 +1539,9 @@ def main():
 
     print("\nNODE AFTER UPDATE")
     print_node_state(node_after_update)
+
+    if update_details["terminate_session"]:
+        return 0
 
     print_node_uncertainties()
     new_ranked_experiments = rank_experiments()
