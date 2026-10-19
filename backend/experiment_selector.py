@@ -7,15 +7,23 @@ from pathlib import Path
 # Find the project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Path to our demo scenario
-SCENARIO_FILE = Path(os.environ.get("SCENARIO_FILE", PROJECT_ROOT / "data" / "demo-scenario.json"))
+# Default scenario used when --scenario is not provided.
+DEFAULT_SCENARIO_FILE = PROJECT_ROOT / "data" / "demo-scenario.json"
 
-
-def load_scenario():
-    with open(SCENARIO_FILE, "r") as file:
+def load_scenario(scenario_file):
+    with open(scenario_file, "r") as file:
         scenario = json.load(file)
 
     return scenario
+
+
+def resolve_scenario_file(scenario_path):
+    scenario_file = Path(scenario_path)
+
+    if not scenario_file.is_absolute():
+        scenario_file = PROJECT_ROOT / scenario_file
+
+    return scenario_file
 
 
 def calculate_uncertainty(node):
@@ -87,6 +95,30 @@ def score_experiment(experiment):
     }
 
 
+def get_dependency_logic(node):
+    depends_on = node["depends_on"]
+    dependency_logic = node.get("dependency_logic")
+
+    if dependency_logic is None:
+        if depends_on:
+            dependency_logic = "all"
+        else:
+            dependency_logic = "none"
+
+    return dependency_logic
+
+
+def get_prerequisite_nodes(node):
+    return [find_node(prerequisite_node_id) for prerequisite_node_id in node["depends_on"]]
+
+
+def format_prerequisite_statuses(prerequisite_nodes):
+    return ", ".join(
+        prerequisite_node["name"] + " (" + prerequisite_node["status"] + ")"
+        for prerequisite_node in prerequisite_nodes
+    )
+
+
 def is_experiment_eligible(experiment):
     node = find_node(experiment["tests_node"])
 
@@ -101,21 +133,146 @@ def is_experiment_eligible(experiment):
         )
         return False
 
-    for prerequisite_node_id in node["depends_on"]:
-        prerequisite_node = find_node(prerequisite_node_id)
+    dependency_logic = get_dependency_logic(node)
 
-        if prerequisite_node["status"] != "supported":
+    if dependency_logic == "none":
+        return True
+
+    prerequisite_nodes = get_prerequisite_nodes(node)
+
+    if dependency_logic == "all":
+        blocking_prerequisites = [
+            prerequisite_node
+            for prerequisite_node in prerequisite_nodes
+            if prerequisite_node["status"] != "supported"
+        ]
+
+        if blocking_prerequisites:
             print(
                 "Skipping",
                 experiment["name"],
-                "because prerequisite",
-                prerequisite_node["name"],
-                "has status",
-                prerequisite_node["status"],
+                "because these prerequisites are not supported:",
+                format_prerequisite_statuses(blocking_prerequisites),
             )
             return False
 
-    return True
+        return True
+
+    if dependency_logic == "any":
+        for prerequisite_node in prerequisite_nodes:
+            if prerequisite_node["status"] == "supported":
+                return True
+
+        print(
+            "Skipping",
+            experiment["name"],
+            "because none of these prerequisites are supported:",
+            format_prerequisite_statuses(prerequisite_nodes),
+        )
+        return False
+
+    raise ValueError("Unknown dependency_logic: " + dependency_logic)
+
+
+def evaluate_final_decision(node):
+    dependency_logic = get_dependency_logic(node)
+    prerequisite_nodes = get_prerequisite_nodes(node)
+
+    if dependency_logic == "none":
+        return {
+            "node": node,
+            "decision": "GO",
+            "reason": "No prerequisite gates are required.",
+            "prerequisite_nodes": prerequisite_nodes,
+        }
+
+    if dependency_logic == "all":
+        unsupported_prerequisites = [
+            prerequisite_node
+            for prerequisite_node in prerequisite_nodes
+            if prerequisite_node["status"] != "supported"
+        ]
+
+        if not unsupported_prerequisites:
+            return {
+                "node": node,
+                "decision": "GO",
+                "reason": "All required candidate-level gates are supported:",
+                "prerequisite_nodes": prerequisite_nodes,
+            }
+
+        contradicted_prerequisites = [
+            prerequisite_node
+            for prerequisite_node in unsupported_prerequisites
+            if prerequisite_node["status"] == "contradicted"
+        ]
+
+        if contradicted_prerequisites:
+            reason = (
+                "One or more required dependencies are contradicted. Final NO-GO "
+                "semantics will later depend on failure_scope / experiment actions:"
+            )
+        else:
+            reason = "One or more required dependencies still need more evidence:"
+
+        return {
+            "node": node,
+            "decision": "MORE EVIDENCE",
+            "reason": reason,
+            "prerequisite_nodes": prerequisite_nodes,
+        }
+
+    if dependency_logic == "any":
+        for prerequisite_node in prerequisite_nodes:
+            if prerequisite_node["status"] == "supported":
+                return {
+                    "node": node,
+                    "decision": "GO",
+                    "reason": "At least one required path is supported:",
+                    "prerequisite_nodes": prerequisite_nodes,
+                }
+
+        return {
+            "node": node,
+            "decision": "MORE EVIDENCE",
+            "reason": "No required path is supported yet:",
+            "prerequisite_nodes": prerequisite_nodes,
+        }
+
+    raise ValueError("Unknown dependency_logic: " + dependency_logic)
+
+
+def evaluate_final_decisions():
+    return [
+        evaluate_final_decision(node)
+        for node in scenario["nodes"]
+        if node.get("node_type") == "final_decision"
+    ]
+
+
+def print_final_decisions():
+    final_decisions = evaluate_final_decisions()
+
+    if not final_decisions:
+        return final_decisions
+
+    print("\nFINAL DECISION")
+
+    for final_decision in final_decisions:
+        print(final_decision["node"]["name"] + ":", final_decision["decision"])
+        print("\nReason:")
+        print(final_decision["reason"])
+
+        for prerequisite_node in final_decision["prerequisite_nodes"]:
+            print("-", prerequisite_node["name"] + ":", prerequisite_node["status"])
+
+        if final_decision["decision"] == "MORE EVIDENCE":
+            print(
+                "The current graph has no eligible experiments left, but final decision logic "
+                "is unresolved at this MVP stage."
+            )
+
+    return final_decisions
 
 
 def update_node_from_result(experiment_id, result):
@@ -207,6 +364,7 @@ def print_recommendation(ranked_experiments, heading="RECOMMENDED NEXT EXPERIMEN
     if not ranked_experiments:
         print("\n" + heading)
         print("No eligible experiments remain.")
+        print_final_decisions()
         return None
 
     recommended = ranked_experiments[0]
@@ -262,6 +420,16 @@ def run_interactive_session():
         recommended = print_recommendation(ranked_experiments)
 
         if recommended is None:
+            final_decisions = evaluate_final_decisions()
+
+            if any(
+                final_decision["decision"] == "GO"
+                for final_decision in final_decisions
+            ):
+                print("Ending session because a final decision was reached.")
+            elif final_decisions:
+                print("Ending session because no eligible experiments remain.")
+
             break
 
         recommended_experiment = recommended["experiment"]
@@ -300,6 +468,16 @@ def run_interactive_session():
         print_recommendation(updated_ranked_experiments, "UPDATED RECOMMENDED NEXT EXPERIMENT")
 
         if not updated_ranked_experiments:
+            final_decisions = evaluate_final_decisions()
+
+            if any(
+                final_decision["decision"] == "GO"
+                for final_decision in final_decisions
+            ):
+                print("Ending session because a final decision was reached.")
+            elif final_decisions:
+                print("Ending session because no eligible experiments remain.")
+
             break
 
         round_number = round_number + 1
@@ -308,6 +486,11 @@ def run_interactive_session():
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Rank experiments and optionally ingest one experimental result."
+    )
+    parser.add_argument(
+        "--scenario",
+        default=str(DEFAULT_SCENARIO_FILE.relative_to(PROJECT_ROOT)),
+        help="Path to the JSON scenario file to load.",
     )
     parser.add_argument(
         "--session",
@@ -320,23 +503,33 @@ def parse_args():
     return parser.parse_args()
 
 
-scenario = load_scenario()
+scenario = None
 
 
 def main():
-    args = parse_args()
+    global scenario
 
+    args = parse_args()
+    scenario_file = resolve_scenario_file(args.scenario)
+
+    if not scenario_file.exists():
+        print("Error: scenario file not found:", scenario_file)
+        return 1
+
+    scenario = load_scenario(scenario_file)
+
+    print("Loaded scenario file:", scenario_file)
     print("Drug:", scenario["drug"])
     print("Disease:", scenario["disease"])
     print("Number of experiments:", len(scenario["experiments"]))
 
     if args.session:
         run_interactive_session()
-        return
+        return 0
 
     if args.experiment_id is None and args.result is None:
         print_current_state()
-        return
+        return 0
 
     if args.experiment_id is None or args.result is None:
         raise ValueError("Provide both experiment_id and result, or neither.")
@@ -364,6 +557,8 @@ def main():
     print_rankings(new_ranked_experiments, "New ranked experiment scores")
     print_recommendation(new_ranked_experiments, "NEW RECOMMENDED NEXT EXPERIMENT")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
