@@ -119,6 +119,151 @@ def format_prerequisite_statuses(prerequisite_nodes):
     )
 
 
+def get_final_decision_nodes():
+    return [
+        node
+        for node in scenario["nodes"]
+        if node.get("node_type") == "final_decision"
+    ]
+
+
+def is_node_potentially_satisfiable(node, assumed_supported=None, visiting=None):
+    if assumed_supported is None:
+        assumed_supported = set()
+
+    if visiting is None:
+        visiting = set()
+
+    if node["id"] in assumed_supported:
+        return True
+
+    if node["status"] == "supported":
+        return True
+
+    if node["status"] == "contradicted":
+        return False
+
+    if node["id"] in visiting:
+        return True
+
+    visiting.add(node["id"])
+    dependency_logic = get_dependency_logic(node)
+
+    if dependency_logic == "none":
+        visiting.remove(node["id"])
+        return True
+
+    prerequisite_nodes = get_prerequisite_nodes(node)
+
+    if dependency_logic == "all":
+        is_potentially_satisfiable = all(
+            is_node_potentially_satisfiable(
+                prerequisite_node,
+                assumed_supported,
+                visiting,
+            )
+            for prerequisite_node in prerequisite_nodes
+        )
+        visiting.remove(node["id"])
+        return is_potentially_satisfiable
+
+    if dependency_logic == "any":
+        is_potentially_satisfiable = any(
+            is_node_potentially_satisfiable(
+                prerequisite_node,
+                assumed_supported,
+                visiting,
+            )
+            for prerequisite_node in prerequisite_nodes
+        )
+        visiting.remove(node["id"])
+        return is_potentially_satisfiable
+
+    visiting.remove(node["id"])
+    raise ValueError("Unknown dependency_logic: " + dependency_logic)
+
+
+def can_node_reach_final_decision(node, final_decision_node):
+    if node["id"] == final_decision_node["id"]:
+        return True
+
+    return final_decision_node["id"] in find_downstream_descendants(node["id"])
+
+
+def can_experiment_contribute_to_final_decision(experiment):
+    final_decision_nodes = get_final_decision_nodes()
+
+    if not final_decision_nodes:
+        return True
+
+    node = find_node(experiment["tests_node"])
+
+    for final_decision_node in final_decision_nodes:
+        if not can_node_reach_final_decision(node, final_decision_node):
+            continue
+
+        if is_node_potentially_satisfiable(
+            final_decision_node,
+            assumed_supported={node["id"]},
+        ):
+            return True
+
+    print(
+        "Skipping",
+        experiment["name"],
+        "because resolving",
+        node["name"],
+        "cannot restore a viable path to a final decision.",
+    )
+    return False
+
+
+def get_unreachable_final_decision_dependencies(final_decision_node):
+    return [
+        prerequisite_node
+        for prerequisite_node in get_prerequisite_nodes(final_decision_node)
+        if not is_node_potentially_satisfiable(prerequisite_node)
+    ]
+
+
+def print_dead_end_state():
+    final_decision_nodes = get_final_decision_nodes()
+    printed_dead_end = False
+
+    for final_decision_node in final_decision_nodes:
+        unreachable_dependencies = get_unreachable_final_decision_dependencies(
+            final_decision_node
+        )
+
+        if not unreachable_dependencies:
+            continue
+
+        if not printed_dead_end:
+            print("\nPROGRAM STATE: DEAD END / MORE EVIDENCE")
+            printed_dead_end = True
+
+        print("\nReason:")
+        print(
+            "The current graph cannot satisfy",
+            final_decision_node["name"],
+            "because:",
+        )
+
+        for prerequisite_node in unreachable_dependencies:
+            print(
+                "-",
+                prerequisite_node["name"],
+                "is unreachable under the current dependency model.",
+            )
+
+        print(
+            "This is not an automatic NO-GO; it means the current modeled path is exhausted "
+            "and more evidence or an alternative mechanism may be needed."
+        )
+
+    return printed_dead_end
+
+
 def is_experiment_eligible(experiment):
     node = find_node(experiment["tests_node"])
 
@@ -245,8 +390,7 @@ def evaluate_final_decision(node):
 def evaluate_final_decisions():
     return [
         evaluate_final_decision(node)
-        for node in scenario["nodes"]
-        if node.get("node_type") == "final_decision"
+        for node in get_final_decision_nodes()
     ]
 
 
@@ -268,7 +412,7 @@ def print_final_decisions():
 
         if final_decision["decision"] == "MORE EVIDENCE":
             print(
-                "The current graph has no eligible experiments left, but final decision logic "
+                "The current graph has no useful experiments left, but final decision logic "
                 "is unresolved at this MVP stage."
             )
 
@@ -306,7 +450,10 @@ def rank_experiments():
     experiment_scores = []
 
     for experiment in scenario["experiments"]:
-        if is_experiment_eligible(experiment):
+        if (
+            is_experiment_eligible(experiment)
+            and can_experiment_contribute_to_final_decision(experiment)
+        ):
             experiment_scores.append(score_experiment(experiment))
 
     return sorted(
@@ -363,8 +510,9 @@ def print_rankings(ranked_experiments, heading="Ranked experiment scores"):
 def print_recommendation(ranked_experiments, heading="RECOMMENDED NEXT EXPERIMENT"):
     if not ranked_experiments:
         print("\n" + heading)
-        print("No eligible experiments remain.")
+        print("No useful experiments remain.")
         print_final_decisions()
+        print_dead_end_state()
         return None
 
     recommended = ranked_experiments[0]
@@ -428,7 +576,7 @@ def run_interactive_session():
             ):
                 print("Ending session because a final decision was reached.")
             elif final_decisions:
-                print("Ending session because no eligible experiments remain.")
+                print("Ending session because no useful experiments remain.")
 
             break
 
@@ -476,7 +624,7 @@ def run_interactive_session():
             ):
                 print("Ending session because a final decision was reached.")
             elif final_decisions:
-                print("Ending session because no eligible experiments remain.")
+                print("Ending session because no useful experiments remain.")
 
             break
 
