@@ -1,4 +1,5 @@
 import argparse
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
@@ -69,16 +70,351 @@ def calculate_downstream_impact(node):
     return max(len(downstream_descendants), 1)
 
 
+def find_node_in_state(scenario_state, node_id):
+    for node in scenario_state["nodes"]:
+        if node["id"] == node_id:
+            return node
+
+    return None
+
+
+def get_dependency_logic_for_node(node):
+    depends_on = node["depends_on"]
+    dependency_logic = node.get("dependency_logic")
+
+    if dependency_logic is None:
+        if depends_on:
+            dependency_logic = "all"
+        else:
+            dependency_logic = "none"
+
+    return dependency_logic
+
+
+def get_prerequisite_nodes_in_state(scenario_state, node):
+    return [
+        find_node_in_state(scenario_state, prerequisite_node_id)
+        for prerequisite_node_id in node["depends_on"]
+    ]
+
+
+def find_downstream_descendants_in_state(scenario_state, node_id, visited=None):
+    if visited is None:
+        visited = set()
+
+    node = find_node_in_state(scenario_state, node_id)
+
+    if node is None:
+        return visited
+
+    for downstream_node_id in node["downstream"]:
+        if downstream_node_id not in visited:
+            visited.add(downstream_node_id)
+            find_downstream_descendants_in_state(
+                scenario_state,
+                downstream_node_id,
+                visited,
+            )
+
+    return visited
+
+
+def get_final_decision_nodes_in_state(scenario_state):
+    return [
+        node
+        for node in scenario_state["nodes"]
+        if node.get("node_type") == "final_decision"
+    ]
+
+
+def is_node_potentially_satisfiable_in_state(
+    scenario_state,
+    node,
+    assumed_supported=None,
+    visiting=None,
+):
+    if assumed_supported is None:
+        assumed_supported = set()
+
+    if visiting is None:
+        visiting = set()
+
+    if node["id"] in assumed_supported:
+        return True
+
+    if node["status"] == "supported":
+        return True
+
+    if node["status"] == "contradicted":
+        return False
+
+    if node["id"] in visiting:
+        return True
+
+    visiting.add(node["id"])
+    dependency_logic = get_dependency_logic_for_node(node)
+
+    if dependency_logic == "none":
+        visiting.remove(node["id"])
+        return True
+
+    prerequisite_nodes = get_prerequisite_nodes_in_state(scenario_state, node)
+
+    if dependency_logic == "all":
+        is_potentially_satisfiable = all(
+            is_node_potentially_satisfiable_in_state(
+                scenario_state,
+                prerequisite_node,
+                assumed_supported,
+                visiting,
+            )
+            for prerequisite_node in prerequisite_nodes
+        )
+        visiting.remove(node["id"])
+        return is_potentially_satisfiable
+
+    if dependency_logic == "any":
+        is_potentially_satisfiable = any(
+            is_node_potentially_satisfiable_in_state(
+                scenario_state,
+                prerequisite_node,
+                assumed_supported,
+                visiting,
+            )
+            for prerequisite_node in prerequisite_nodes
+        )
+        visiting.remove(node["id"])
+        return is_potentially_satisfiable
+
+    visiting.remove(node["id"])
+    raise ValueError("Unknown dependency_logic: " + dependency_logic)
+
+
+def is_experiment_eligible_in_state(scenario_state, experiment):
+    node = find_node_in_state(scenario_state, experiment["tests_node"])
+
+    if node["status"] in ["supported", "contradicted"]:
+        return False
+
+    dependency_logic = get_dependency_logic_for_node(node)
+
+    if dependency_logic == "none":
+        return True
+
+    prerequisite_nodes = get_prerequisite_nodes_in_state(scenario_state, node)
+
+    if dependency_logic == "all":
+        return all(
+            prerequisite_node["status"] == "supported"
+            for prerequisite_node in prerequisite_nodes
+        )
+
+    if dependency_logic == "any":
+        return any(
+            prerequisite_node["status"] == "supported"
+            for prerequisite_node in prerequisite_nodes
+        )
+
+    raise ValueError("Unknown dependency_logic: " + dependency_logic)
+
+
+def can_node_reach_final_decision_in_state(scenario_state, node, final_decision_node):
+    if node["id"] == final_decision_node["id"]:
+        return True
+
+    return final_decision_node["id"] in find_downstream_descendants_in_state(
+        scenario_state,
+        node["id"],
+    )
+
+
+def can_experiment_contribute_to_final_decision_in_state(scenario_state, experiment):
+    final_decision_nodes = get_final_decision_nodes_in_state(scenario_state)
+
+    if not final_decision_nodes:
+        return True
+
+    node = find_node_in_state(scenario_state, experiment["tests_node"])
+
+    for final_decision_node in final_decision_nodes:
+        if not can_node_reach_final_decision_in_state(
+            scenario_state,
+            node,
+            final_decision_node,
+        ):
+            continue
+
+        if is_node_potentially_satisfiable_in_state(
+            scenario_state,
+            final_decision_node,
+            assumed_supported={node["id"]},
+        ):
+            return True
+
+    return False
+
+
+def apply_hypothetical_result(scenario_state, experiment, status):
+    node = find_node_in_state(scenario_state, experiment["tests_node"])
+    node["status"] = status
+
+    if status == "supported":
+        node["confidence"] = min(node["confidence"] + 0.5, 1)
+    elif status == "contradicted":
+        node["confidence"] = max(node["confidence"] - 0.5, 0)
+
+
+def summarize_program_state(scenario_state):
+    node_reachability = {
+        node["id"]: is_node_potentially_satisfiable_in_state(
+            scenario_state,
+            node,
+        )
+        for node in scenario_state["nodes"]
+    }
+    useful_experiment_ids = {
+        experiment["id"]
+        for experiment in scenario_state["experiments"]
+        if (
+            is_experiment_eligible_in_state(scenario_state, experiment)
+            and can_experiment_contribute_to_final_decision_in_state(
+                scenario_state,
+                experiment,
+            )
+        )
+    }
+    final_decision_reachability = {
+        node["id"]: is_node_potentially_satisfiable_in_state(
+            scenario_state,
+            node,
+        )
+        for node in get_final_decision_nodes_in_state(scenario_state)
+    }
+
+    return {
+        "node_reachability": node_reachability,
+        "useful_experiment_ids": useful_experiment_ids,
+        "final_decision_reachability": final_decision_reachability,
+    }
+
+
+def calculate_boolean_map_difference(first_map, second_map):
+    keys = set(first_map) | set(second_map)
+
+    if not keys:
+        return 0
+
+    changed_keys = [
+        key
+        for key in keys
+        if first_map.get(key) != second_map.get(key)
+    ]
+
+    return len(changed_keys) / len(keys)
+
+
+def calculate_set_difference(first_set, second_set):
+    union = first_set | second_set
+
+    if not union:
+        return 0
+
+    return len(first_set ^ second_set) / len(union)
+
+
+def get_experiment_names_by_id(experiment_ids):
+    names = []
+
+    for experiment_id in sorted(experiment_ids):
+        experiment = find_experiment(experiment_id)
+
+        if experiment is not None:
+            names.append(experiment["name"])
+
+    return names
+
+
+def get_node_names_by_id(node_ids):
+    names = []
+
+    for node_id in sorted(node_ids):
+        node = find_node(node_id)
+
+        if node is not None:
+            names.append(node["name"])
+
+    return names
+
+
+def compare_program_states(positive_summary, negative_summary):
+    node_difference = calculate_boolean_map_difference(
+        positive_summary["node_reachability"],
+        negative_summary["node_reachability"],
+    )
+    useful_experiment_difference = calculate_set_difference(
+        positive_summary["useful_experiment_ids"],
+        negative_summary["useful_experiment_ids"],
+    )
+    final_decision_difference = calculate_boolean_map_difference(
+        positive_summary["final_decision_reachability"],
+        negative_summary["final_decision_reachability"],
+    )
+    marginal_decision_impact = (
+        node_difference
+        + useful_experiment_difference
+        + final_decision_difference
+    ) / 3
+    changed_node_ids = {
+        node_id
+        for node_id in positive_summary["node_reachability"]
+        if (
+            positive_summary["node_reachability"].get(node_id)
+            != negative_summary["node_reachability"].get(node_id)
+        )
+    }
+
+    return {
+        "marginal_decision_impact": marginal_decision_impact,
+        "node_difference": node_difference,
+        "useful_experiment_difference": useful_experiment_difference,
+        "final_decision_difference": final_decision_difference,
+        "changed_node_names": get_node_names_by_id(changed_node_ids),
+        "positive_only_experiment_names": get_experiment_names_by_id(
+            positive_summary["useful_experiment_ids"]
+            - negative_summary["useful_experiment_ids"]
+        ),
+        "negative_only_experiment_names": get_experiment_names_by_id(
+            negative_summary["useful_experiment_ids"]
+            - positive_summary["useful_experiment_ids"]
+        ),
+    }
+
+
+def calculate_marginal_decision_impact(experiment):
+    positive_scenario = deepcopy(scenario)
+    negative_scenario = deepcopy(scenario)
+
+    apply_hypothetical_result(positive_scenario, experiment, "supported")
+    apply_hypothetical_result(negative_scenario, experiment, "contradicted")
+
+    positive_summary = summarize_program_state(positive_scenario)
+    negative_summary = summarize_program_state(negative_scenario)
+
+    return compare_program_states(positive_summary, negative_summary)
+
+
 def score_experiment(experiment):
     node = find_node(experiment["tests_node"])
     uncertainty = calculate_uncertainty(node)
     downstream_impact = calculate_downstream_impact(node)
+    impact_details = calculate_marginal_decision_impact(experiment)
+    marginal_decision_impact = impact_details["marginal_decision_impact"]
     discriminating_power = experiment["discriminating_power"]
     cost = experiment["cost"]
     time = experiment["time"]
     score = (
         uncertainty
-        * downstream_impact
+        * marginal_decision_impact
         * discriminating_power
         / (cost * time)
     )
@@ -88,6 +424,8 @@ def score_experiment(experiment):
         "node": node,
         "uncertainty": uncertainty,
         "downstream_impact": downstream_impact,
+        "marginal_decision_impact": marginal_decision_impact,
+        "impact_details": impact_details,
         "discriminating_power": discriminating_power,
         "cost": cost,
         "time": time,
@@ -496,6 +834,8 @@ def print_rankings(ranked_experiments, heading="Ranked experiment scores"):
             round(experiment_score["uncertainty"], 2),
             "| downstream impact:",
             experiment_score["downstream_impact"],
+            "| marginal decision impact:",
+            round(experiment_score["marginal_decision_impact"], 3),
             "| discriminating power:",
             experiment_score["discriminating_power"],
             "| cost:",
@@ -505,6 +845,50 @@ def print_rankings(ranked_experiments, heading="Ranked experiment scores"):
             "| score:",
             round(experiment_score["score"], 3)
         )
+
+
+def print_marginal_impact_explanation(experiment_score):
+    impact_details = experiment_score["impact_details"]
+
+    print("Program-difference check:")
+    print(
+        "- Node reachability difference:",
+        round(impact_details["node_difference"], 3),
+    )
+    print(
+        "- Useful experiment eligibility difference:",
+        round(impact_details["useful_experiment_difference"], 3),
+    )
+    print(
+        "- Final-decision reachability difference:",
+        round(impact_details["final_decision_difference"], 3),
+    )
+
+    changed_node_names = impact_details["changed_node_names"]
+    positive_only_experiment_names = impact_details["positive_only_experiment_names"]
+    negative_only_experiment_names = impact_details["negative_only_experiment_names"]
+
+    if changed_node_names:
+        print("- Reachability changed for:", "; ".join(changed_node_names[:5]))
+
+    if positive_only_experiment_names:
+        print(
+            "- Useful only if positive:",
+            "; ".join(positive_only_experiment_names[:5]),
+        )
+
+    if negative_only_experiment_names:
+        print(
+            "- Useful only if negative:",
+            "; ".join(negative_only_experiment_names[:5]),
+        )
+
+    if (
+        not changed_node_names
+        and not positive_only_experiment_names
+        and not negative_only_experiment_names
+    ):
+        print("- Positive and negative outcomes produce very similar program states.")
 
 
 def print_recommendation(ranked_experiments, heading="RECOMMENDED NEXT EXPERIMENT"):
@@ -530,15 +914,16 @@ def print_recommendation(ranked_experiments, heading="RECOMMENDED NEXT EXPERIMEN
         recommended_node["name"],
         "with uncertainty",
         round(recommended["uncertainty"], 2),
-        "and affects",
-        recommended["downstream_impact"],
-        "downstream node(s), while having discriminating power",
+        "and marginal decision impact",
+        round(recommended["marginal_decision_impact"], 3),
+        "while having discriminating power",
         recommended["discriminating_power"],
         "at cost",
         recommended["cost"],
         "and time",
         recommended["time"],
     )
+    print_marginal_impact_explanation(recommended)
 
     return recommended
 
