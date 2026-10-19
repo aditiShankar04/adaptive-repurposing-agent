@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 
 
@@ -7,7 +8,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Path to our demo scenario
-SCENARIO_FILE = PROJECT_ROOT / "data" / "demo-scenario.json"
+SCENARIO_FILE = Path(os.environ.get("SCENARIO_FILE", PROJECT_ROOT / "data" / "demo-scenario.json"))
 
 
 def load_scenario():

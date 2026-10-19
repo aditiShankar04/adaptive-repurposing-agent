@@ -1,0 +1,602 @@
+{
+  "scenario_id": "xanomeline-trospium-pdp-prospective-001",
+  "scenario_type": "prospective_exploration",
+  "drug": "Xanomeline + trospium (KarXT / Cobenfy)",
+  "disease": "Parkinson's disease psychosis",
+  "goal": "Given an unresolved opportunity, determine which experiment should be performed next and how hypothetical positive or negative results would reshape the path to a GO / NO-GO / MORE EVIDENCE / RESTRICT decision.",
+  "exploration": {
+    "mode": "what_if_prospective",
+    "status": "unresolved",
+    "known_final_outcome": null,
+    "description": "No PD psychosis trial results exist. Results are never revealed; What-If branches are hypothetical, not predictions.",
+    "framing": "Propranolol = replay the past. Xanomeline = explore possible futures."
+  },
+  "nodes": [
+    {
+      "id": "mechanistic_plausibility",
+      "name": "Muscarinic Antipsychotic Plausibility",
+      "question": "Is M1/M4 muscarinic agonism a plausible antipsychotic mechanism in humans?",
+      "node_type": "candidate_gate",
+      "status": "supported",
+      "confidence": 0.85,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "m4_branch",
+        "m1_branch",
+        "selectivity_profile"
+      ],
+      "failure_scope": "candidate",
+      "evidence": {
+        "supporting": [
+          "Approved for schizophrenia (Sept 2024); all three EMERGENT phase 3 trials met the primary PANSS endpoint.",
+          "Early Alzheimer's trial of xanomeline alone showed fewer hallucinations and delusions."
+        ],
+        "contradicting": [
+          "Schizophrenia is not PD psychosis: different brain, age, and dopamine state."
+        ],
+        "gaps": [
+          "No randomized PD psychosis data."
+        ]
+      }
+    },
+    {
+      "id": "m4_branch",
+      "name": "M4-Mediated Dopamine/Glutamate Modulation",
+      "question": "Does M4 agonism at achievable concentrations explain an antipsychotic effect that could transfer to PD psychosis?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [
+        "mechanistic_plausibility"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "brain_exposure"
+      ],
+      "failure_scope": "branch",
+      "alternative_group": "mechanistic_support",
+      "evidence": {
+        "supporting": [
+          "Antipsychotic efficacy in schizophrenia without dopamine D2 blockade (extrapyramidal effects about 1.5% vs 0.3% on placebo)."
+        ],
+        "contradicting": [],
+        "gaps": [
+          "No PD-specific M4 data.",
+          "Attribution of psychosis effects mainly to M4 comes from a general summary, not a primary paper."
+        ]
+      }
+    },
+    {
+      "id": "m1_branch",
+      "name": "M1 / Cholinergic Repletion",
+      "question": "Does M1 agonism offset the cholinergic deficit suspected in PD psychosis and contribute an antipsychotic effect?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.4,
+      "depends_on": [
+        "mechanistic_plausibility"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "brain_exposure"
+      ],
+      "failure_scope": "branch",
+      "alternative_group": "mechanistic_support",
+      "evidence": {
+        "supporting": [
+          "Cholinergic degeneration is suspected in PD psychosis."
+        ],
+        "contradicting": [],
+        "gaps": [
+          "M1 role in psychosis is described as modest in a general summary.",
+          "No PD-specific M1 data."
+        ]
+      }
+    },
+    {
+      "id": "selectivity_profile",
+      "name": "Receptor Potency and Selectivity Profile",
+      "question": "Does xanomeline show the M1/M4-preferring potency and selectivity the mechanism assumes?",
+      "node_type": "pharmacology_gate",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [
+        "mechanistic_plausibility"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "pd_clinical_safety"
+      ],
+      "failure_scope": "path",
+      "evidence": {
+        "supporting": [],
+        "contradicting": [
+          "Two reviews disagree: lower affinity at M2/M3/M5 vs. similar affinity across M1-M5 with higher agonist activity at M1/M4."
+        ],
+        "gaps": [
+          "No Ki/EC50 numbers collected yet (pull from ChEMBL / IUPHAR)."
+        ]
+      }
+    },
+    {
+      "id": "exposure_pk",
+      "name": "Achievable Exposure in Older PD Patients",
+      "question": "Can an effective exposure be reached and tolerated in older PD patients (kidney, liver, CYP2D6, food, gut motility)?",
+      "node_type": "exposure_gate",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "regimen_or_population",
+      "evidence": {
+        "supporting": [
+          "Adult PK known: half-life about 5 h, CYP2D6-driven metabolism; trospium cleared by the kidney."
+        ],
+        "contradicting": [
+          "Label: contraindicated in moderate or severe hepatic impairment; not recommended if eGFR is below 60."
+        ],
+        "gaps": [
+          "No PK data in older PD patients."
+        ]
+      }
+    },
+    {
+      "id": "cardiac_safety",
+      "name": "Cardiac Safety (hERG / QT / Heart Rate)",
+      "question": "Is cardiac risk (QT liability, heart-rate increase) acceptable or manageable?",
+      "node_type": "safety_gate",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "pd_clinical_safety"
+      ],
+      "failure_scope": "regimen_or_population",
+      "evidence": {
+        "supporting": [],
+        "contradicting": [
+          "Label notes the drug can increase heart rate."
+        ],
+        "gaps": [
+          "No hERG/QT data found in the sources checked (pimavanserin carries QT warnings, so it is a useful comparison)."
+        ]
+      }
+    },
+    {
+      "id": "interaction_risk",
+      "name": "Drug-Interaction Risk with PD Medications",
+      "question": "Can xanomeline-trospium be co-prescribed safely with common PD-patient medications?",
+      "node_type": "safety_gate",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "regimen_or_population",
+      "evidence": {
+        "supporting": [],
+        "contradicting": [
+          "CYP2D6 inhibitors (for example fluoxetine, paroxetine) can raise xanomeline levels.",
+          "Other anticholinergic drugs add to anticholinergic burden."
+        ],
+        "gaps": [
+          "Cholinesterase inhibitor combination (used in PD dementia) not confirmed in a PD source."
+        ]
+      }
+    },
+    {
+      "id": "brain_exposure",
+      "name": "Brain Exposure and Receptor Occupancy",
+      "question": "Does an effective, tolerable dose occupy brain muscarinic receptors in a parkinsonian setting?",
+      "node_type": "exposure_gate",
+      "status": "uncertain",
+      "confidence": 0.6,
+      "depends_on": [
+        "m4_branch",
+        "m1_branch"
+      ],
+      "dependency_logic": "any",
+      "downstream": [
+        "animal_efficacy",
+        "pd_motor_safety"
+      ],
+      "failure_scope": "candidate",
+      "evidence": {
+        "supporting": [
+          "No P-gp/BCRP efflux liability and very large volume of distribution; centrally active in non-PD adults."
+        ],
+        "contradicting": [],
+        "gaps": [
+          "No occupancy data in a parkinsonian brain."
+        ]
+      }
+    },
+    {
+      "id": "animal_efficacy",
+      "name": "Preclinical Psychosis-Like-Behavior Efficacy",
+      "question": "Does xanomeline reduce psychosis-like behavior in a validated parkinsonian model (levodopa-treated MPTP marmoset)?",
+      "node_type": "translational_gate",
+      "status": "unexplored",
+      "confidence": 0.3,
+      "depends_on": [
+        "brain_exposure"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "pd_efficacy"
+      ],
+      "failure_scope": "path",
+      "evidence": {
+        "supporting": [
+          "The MPTP marmoset is described as a validated model for predicting efficacy of PD psychosis treatments."
+        ],
+        "contradicting": [],
+        "gaps": [
+          "No xanomeline data in this model found.",
+          "One review proposes a drop of more than 50% in psychosis-like behaviors as a predictive benchmark."
+        ]
+      }
+    },
+    {
+      "id": "pd_motor_safety",
+      "name": "Preclinical PD Motor Safety",
+      "question": "Does the regimen avoid worsening parkinsonian motor function in a parkinsonian model?",
+      "node_type": "safety_gate",
+      "status": "unexplored",
+      "confidence": 0.5,
+      "depends_on": [
+        "brain_exposure"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "pd_clinical_safety"
+      ],
+      "failure_scope": "candidate",
+      "evidence": {
+        "supporting": [
+          "Low rates of extrapyramidal effects in schizophrenia trials."
+        ],
+        "contradicting": [],
+        "gaps": [
+          "Never tested in the dopamine-depleted brain."
+        ]
+      }
+    },
+    {
+      "id": "pd_clinical_safety",
+      "name": "PD Clinical Safety and Tolerability",
+      "question": "Is the regimen tolerable in older PD patients (motor, blood pressure, bladder, gut, confusion)?",
+      "node_type": "safety_gate",
+      "status": "unexplored",
+      "confidence": 0.4,
+      "depends_on": [
+        "pd_motor_safety",
+        "cardiac_safety",
+        "selectivity_profile"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "pd_efficacy",
+        "viability"
+      ],
+      "failure_scope": "regimen_or_population",
+      "evidence": {
+        "supporting": [],
+        "contradicting": [
+          "Label warnings: urinary retention (higher risk in older patients), slowed GI motility, anticholinergic CNS effects including hallucinations, orthostatic hypotension, heart-rate increase."
+        ],
+        "gaps": [
+          "Label trials had a median age of 46; PD psychosis patients are much older."
+        ]
+      }
+    },
+    {
+      "id": "pd_efficacy",
+      "name": "PD-Specific Clinical Efficacy",
+      "question": "Does xanomeline-trospium reduce psychosis symptoms in PD psychosis patients?",
+      "node_type": "clinical_gate",
+      "status": "uncertain",
+      "confidence": 0.3,
+      "depends_on": [
+        "animal_efficacy",
+        "pd_clinical_safety"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "candidate",
+      "evidence": {
+        "supporting": [
+          "One treatment-resistant PD psychosis patient improved (n=1, SSRN preprint, July 2026)."
+        ],
+        "contradicting": [],
+        "gaps": [
+          "No randomized PD trial. Alzheimer's psychosis (ADEPT) readouts pending."
+        ]
+      }
+    },
+    {
+      "id": "viability",
+      "name": "Clinical Viability in PD Psychosis",
+      "question": "Should xanomeline-trospium advance as a treatment for PD psychosis?",
+      "node_type": "final_decision",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "pd_efficacy",
+        "pd_clinical_safety",
+        "exposure_pk",
+        "interaction_risk"
+      ],
+      "dependency_logic": "all",
+      "downstream": [],
+      "failure_scope": "candidate",
+      "evidence": {
+        "supporting": [],
+        "contradicting": [],
+        "gaps": []
+      },
+      "decision_states": [
+        "GO",
+        "NO-GO",
+        "MORE EVIDENCE",
+        "RESTRICT"
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "id": "exp_selectivity_panel",
+      "name": "Receptor Binding and Functional Selectivity Panel (M1-M5 plus off-targets)",
+      "tests_node": "selectivity_profile",
+      "cost": 2,
+      "time": 2,
+      "discriminating_power": 0.85,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "reprioritize",
+      "negative_scope": "selectivity_profile",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "Clean M1/M4-preferring profile resolves the conflicting selectivity descriptions and lowers expected peripheral M2/M3 liability.",
+        "if_negative": "Substantial M2/M3 or off-target activity: raise priority of cardiac and autonomic safety checks and lower confidence in branch attribution. The candidate survives."
+      }
+    },
+    {
+      "id": "exp_m4_potency",
+      "name": "M4 Functional Potency and Efficacy Assay (EC50, Emax)",
+      "tests_node": "m4_branch",
+      "cost": 2,
+      "time": 2,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "prune",
+      "negative_scope": "m4_branch",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "M4 agonism confirmed at achievable concentrations: the M4 branch is supported and the brain-exposure study unlocks.",
+        "if_negative": "M4 branch pruned. The M1 branch remains, so the candidate survives with the mechanism resting on M1 alone."
+      }
+    },
+    {
+      "id": "exp_m1_potency",
+      "name": "M1 Functional Potency and Efficacy Assay (EC50, Emax)",
+      "tests_node": "m1_branch",
+      "cost": 2,
+      "time": 2,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "prune",
+      "negative_scope": "m1_branch",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "M1 agonism confirmed at achievable concentrations: the M1 branch is supported and the brain-exposure study unlocks.",
+        "if_negative": "M1 branch pruned. The M4 branch remains, so the candidate survives with the mechanism resting on M4 alone."
+      }
+    },
+    {
+      "id": "exp_pk_modeling",
+      "name": "PK / Exposure Modeling for Older PD Patients (kidney, liver, CYP2D6, food)",
+      "tests_node": "exposure_pk",
+      "cost": 1,
+      "time": 1,
+      "discriminating_power": 0.6,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "restrict",
+      "negative_scope": "regimen_or_population",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "An effective exposure is projected as achievable in older PD patients at label-like doses.",
+        "if_negative": "Projected exposure is unsafe or ineffective in some groups (for example renal impairment or strong CYP2D6 inhibitors): restrict the dose or population. The candidate survives."
+      }
+    },
+    {
+      "id": "exp_herg",
+      "name": "hERG / Cardiac Safety Assessment (QT, heart rate)",
+      "tests_node": "cardiac_safety",
+      "cost": 2,
+      "time": 1,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "restrict",
+      "negative_scope": "regimen_or_population",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "No meaningful QT liability: the cardiac safety gate clears.",
+        "if_negative": "QT or heart-rate signal: restrict (ECG monitoring, exclusions). Escalate to a candidate-level kill only if the liability is unmanageable and the data pass QC."
+      }
+    },
+    {
+      "id": "exp_ddi",
+      "name": "Drug-Interaction Testing with Common PD Medications",
+      "tests_node": "interaction_risk",
+      "cost": 2,
+      "time": 2,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "restrict",
+      "negative_scope": "regimen_or_population",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "No blocking interaction with common PD-patient medications.",
+        "if_negative": "Restrict co-medications (for example avoid strong CYP2D6 inhibitors or other anticholinergics). The candidate survives."
+      }
+    },
+    {
+      "id": "exp_brain_exposure",
+      "name": "Brain Exposure / Receptor Occupancy in a Parkinsonian Model",
+      "tests_node": "brain_exposure",
+      "cost": 4,
+      "time": 3,
+      "discriminating_power": 0.85,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "repeat_or_kill",
+      "negative_scope": "candidate",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "Brain occupancy at a tolerable dose: the efficacy and motor-safety studies become interpretable.",
+        "if_negative": "Repeat first. If confirmed with trustworthy data, no effective brain exposure at tolerable doses: candidate-level kill for this dose or formulation."
+      }
+    },
+    {
+      "id": "exp_animal_efficacy",
+      "name": "Psychosis-Like-Behavior Efficacy in the Levodopa-Treated MPTP Marmoset",
+      "tests_node": "animal_efficacy",
+      "cost": 4,
+      "time": 4,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "repeat_or_prune",
+      "negative_scope": "animal_efficacy",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "A large reduction in psychosis-like behaviors (more than 50% is one proposed benchmark): advance toward human safety and proof-of-concept.",
+        "if_negative": "Repeat first. If confirmed with adequate brain exposure, the preclinical efficacy path is pruned and candidate confidence drops."
+      }
+    },
+    {
+      "id": "exp_motor_safety",
+      "name": "Parkinsonian Motor Safety in the Marmoset Model",
+      "tests_node": "pd_motor_safety",
+      "cost": 3,
+      "time": 3,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "repeat_or_kill",
+      "negative_scope": "candidate",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "No worsening of parkinsonism: the dopamine-sparing advantage holds and the motor gate clears.",
+        "if_negative": "Repeat first. If worsening is confirmed, candidate-level kill for PD psychosis, since it loses its main advantage over dopamine-blocking antipsychotics."
+      }
+    },
+    {
+      "id": "exp_pd_safety_study",
+      "name": "Small PD Safety and Tolerability Study (older patients on levodopa)",
+      "tests_node": "pd_clinical_safety",
+      "cost": 5,
+      "time": 4,
+      "discriminating_power": 0.9,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "restrict",
+      "negative_scope": "regimen_or_population",
+      "inconclusive_action": "repeat",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "Tolerable in older PD patients with monitoring: the proof-of-concept trial unlocks.",
+        "if_negative": "Restrict (narrower population, slower titration, monitoring). Escalate to kill if the problems are severe or unmanageable (for example motor worsening, urinary retention, confusion)."
+      }
+    },
+    {
+      "id": "exp_poc_trial",
+      "name": "Proof-of-Concept Trial in PD Psychosis (including pimavanserin non-responders)",
+      "tests_node": "pd_efficacy",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.8,
+      "result_status": "not_run",
+      "positive_action": "advance",
+      "negative_action": "repeat_or_kill",
+      "negative_scope": "candidate",
+      "inconclusive_action": "more_evidence",
+      "what_if": {
+        "hypothetical": true,
+        "if_positive": "Signal versus placebo on the PD psychosis scale: advance to a pivotal trial and move the decision toward GO or RESTRICT.",
+        "if_negative": "If adequately powered: kill for PD psychosis. If underpowered: repeat or enlarge."
+      }
+    }
+  ],
+  "planner_rules": {
+    "dependency_semantics": {
+      "all": "All required dependencies must remain viable.",
+      "any": "At least one dependency/alternative route must remain viable.",
+      "none": "No prerequisite."
+    },
+    "action_vocabulary": {
+      "advance": "Raise confidence and unlock downstream nodes.",
+      "prune": "Remove one mechanism branch; the candidate survives if another route remains.",
+      "reprioritize": "Change confidence and priorities without removing a path.",
+      "restrict": "Candidate survives with a narrower regimen, population, or monitoring.",
+      "repeat": "Result is not trustworthy enough to update; run a confirmation.",
+      "repeat_or_prune": "Repeat first; if confirmed with trustworthy data, prune that path.",
+      "repeat_or_kill": "Repeat first; if confirmed with trustworthy data, kill the candidate (state the scope).",
+      "more_evidence": "Keep the decision open and gather more data.",
+      "kill": "Candidate-level failure."
+    },
+    "kill_guardrail": "Mechanism-level failures cannot automatically kill the candidate; candidate kill requires trustworthy candidate-level evidence.",
+    "qc_guardrail": "QUESTIONABLE or FAIL QC cannot trigger candidate kill.",
+    "prospective_guardrail": "No future results are fabricated. What-If outcomes are hypothetical."
+  },
+  "assumptions": [
+    "Cost/time values are normalized hackathon values (1 = lowest, 5 = highest), not literature-derived costs or durations.",
+    "Initial confidence values are judgment-based starting points from the evidence summaries, not calibrated probabilities.",
+    "The dependency structure is a proposal for discussion; node and branch definitions can change.",
+    "Schizophrenia and Alzheimer's evidence is treated as supportive context only, not as PD-specific proof.",
+    "PK values and label warnings come from the US label and a 2026 review; verify against the label before relying on exact numbers.",
+    "M4 and M1 branches are not assumed mutually exclusive."
+  ],
+  "data_gaps": [
+    "Ki / EC50 potency numbers (ChEMBL, IUPHAR).",
+    "Resolution of conflicting selectivity descriptions from primary binding data.",
+    "hERG / QT data.",
+    "PK in older PD patients.",
+    "Any registered PD psychosis trial (check ClinicalTrials.gov).",
+    "ADEPT (Alzheimer's psychosis) readouts, expected by end of 2026."
+  ],
+  "sources": [
+    "https://www.alzforum.org/therapeutics/karxt",
+    "https://www.nature.com/articles/s41537-024-00525-6",
+    "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7161210",
+    "https://www.pharmacytimes.com/view/the-role-of-the-pharmacist-in-the-management-of-psychosis-in-parkinson-s-disease",
+    "https://www.accessdata.fda.gov/drugsatfda_docs/label/2024/216158s000lbl.pdf",
+    "https://ascpt.onlinelibrary.wiley.com/doi/full/10.1111/cts.70725",
+    "https://link.springer.com/article/10.1007/s00702-020-02247-2",
+    "https://link.springer.com/article/10.1007/s00210-021-02090-6"
+  ]
+}
