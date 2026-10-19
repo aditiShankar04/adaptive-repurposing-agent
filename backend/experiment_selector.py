@@ -254,14 +254,55 @@ def can_experiment_contribute_to_final_decision_in_state(scenario_state, experim
     return False
 
 
-def apply_hypothetical_result(scenario_state, experiment, status):
-    node = find_node_in_state(scenario_state, experiment["tests_node"])
-    node["status"] = status
+def record_hypothetical_note(scenario_state, note):
+    if "_hypothetical_notes" not in scenario_state:
+        scenario_state["_hypothetical_notes"] = []
 
-    if status == "supported":
+    scenario_state["_hypothetical_notes"].append(note)
+
+
+def apply_hypothetical_result(scenario_state, experiment, result):
+    node = find_node_in_state(scenario_state, experiment["tests_node"])
+
+    if result == "positive":
+        action = experiment.get("positive_action")
+    else:
+        action = experiment.get("negative_action")
+
+    if result == "positive" and action == "advance":
+        node["status"] = "supported"
         node["confidence"] = min(node["confidence"] + 0.5, 1)
-    elif status == "contradicted":
+        return
+
+    if result == "negative" and action == "prune":
+        node["status"] = "contradicted"
         node["confidence"] = max(node["confidence"] - 0.5, 0)
+        return
+
+    if result == "negative" and action == "restrict":
+        node["status"] = "supported"
+        node["confidence"] = min(node["confidence"] + 0.25, 1)
+        node["restriction_active"] = True
+        node["restriction_source_experiment"] = experiment["id"]
+        record_hypothetical_note(
+            scenario_state,
+            "Negative result for "
+            + experiment["name"]
+            + " uses restrict semantics: path remains viable with restrictions.",
+        )
+        return
+
+    node["hypothetical_action_unimplemented"] = action
+    record_hypothetical_note(
+        scenario_state,
+        "Action semantics not implemented for "
+        + experiment["name"]
+        + " ("
+        + result
+        + " action: "
+        + str(action)
+        + ").",
+    )
 
 
 def summarize_program_state(scenario_state):
@@ -290,11 +331,29 @@ def summarize_program_state(scenario_state):
         )
         for node in get_final_decision_nodes_in_state(scenario_state)
     }
+    restricted_node_ids = {
+        node["id"]
+        for node in scenario_state["nodes"]
+        if node.get("restriction_active")
+    }
+    unimplemented_actions = [
+        note
+        for note in scenario_state.get("_hypothetical_notes", [])
+        if "not implemented" in note
+    ]
+    restriction_notes = [
+        note
+        for note in scenario_state.get("_hypothetical_notes", [])
+        if "restrict semantics" in note
+    ]
 
     return {
         "node_reachability": node_reachability,
         "useful_experiment_ids": useful_experiment_ids,
         "final_decision_reachability": final_decision_reachability,
+        "restricted_node_ids": restricted_node_ids,
+        "unimplemented_actions": unimplemented_actions,
+        "restriction_notes": restriction_notes,
     }
 
 
@@ -387,6 +446,16 @@ def compare_program_states(positive_summary, negative_summary):
             negative_summary["useful_experiment_ids"]
             - positive_summary["useful_experiment_ids"]
         ),
+        "positive_restriction_node_names": get_node_names_by_id(
+            positive_summary["restricted_node_ids"]
+        ),
+        "negative_restriction_node_names": get_node_names_by_id(
+            negative_summary["restricted_node_ids"]
+        ),
+        "positive_unimplemented_actions": positive_summary["unimplemented_actions"],
+        "negative_unimplemented_actions": negative_summary["unimplemented_actions"],
+        "positive_restriction_notes": positive_summary["restriction_notes"],
+        "negative_restriction_notes": negative_summary["restriction_notes"],
     }
 
 
@@ -394,8 +463,8 @@ def calculate_marginal_decision_impact(experiment):
     positive_scenario = deepcopy(scenario)
     negative_scenario = deepcopy(scenario)
 
-    apply_hypothetical_result(positive_scenario, experiment, "supported")
-    apply_hypothetical_result(negative_scenario, experiment, "contradicted")
+    apply_hypothetical_result(positive_scenario, experiment, "positive")
+    apply_hypothetical_result(negative_scenario, experiment, "negative")
 
     positive_summary = summarize_program_state(positive_scenario)
     negative_summary = summarize_program_state(negative_scenario)
@@ -867,6 +936,10 @@ def print_marginal_impact_explanation(experiment_score):
     changed_node_names = impact_details["changed_node_names"]
     positive_only_experiment_names = impact_details["positive_only_experiment_names"]
     negative_only_experiment_names = impact_details["negative_only_experiment_names"]
+    positive_restriction_node_names = impact_details["positive_restriction_node_names"]
+    negative_restriction_node_names = impact_details["negative_restriction_node_names"]
+    positive_unimplemented_actions = impact_details["positive_unimplemented_actions"]
+    negative_unimplemented_actions = impact_details["negative_unimplemented_actions"]
 
     if changed_node_names:
         print("- Reachability changed for:", "; ".join(changed_node_names[:5]))
@@ -883,10 +956,32 @@ def print_marginal_impact_explanation(experiment_score):
             "; ".join(negative_only_experiment_names[:5]),
         )
 
+    if positive_restriction_node_names:
+        print(
+            "- Restrictions active only if positive:",
+            "; ".join(positive_restriction_node_names[:5]),
+        )
+
+    if negative_restriction_node_names:
+        print(
+            "- Restrictions active only if negative:",
+            "; ".join(negative_restriction_node_names[:5]),
+        )
+
+    for note in positive_unimplemented_actions[:3]:
+        print("- Positive simulation note:", note)
+
+    for note in negative_unimplemented_actions[:3]:
+        print("- Negative simulation note:", note)
+
     if (
         not changed_node_names
         and not positive_only_experiment_names
         and not negative_only_experiment_names
+        and not positive_restriction_node_names
+        and not negative_restriction_node_names
+        and not positive_unimplemented_actions
+        and not negative_unimplemented_actions
     ):
         print("- Positive and negative outcomes produce very similar program states.")
 
