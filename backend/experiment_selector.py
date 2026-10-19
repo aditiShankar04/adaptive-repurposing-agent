@@ -844,6 +844,12 @@ def build_qc_update_details(experiment, result, qc, state_updated):
         "state_updated": state_updated,
         "reason": "",
         "recommended_action": "",
+        "repeat_required": False,
+        "confirmed_failure": False,
+        "confirmed_action": "",
+        "confirmed_scope": "",
+        "terminate_session": False,
+        "final_decision": "",
     }
 
     if qc == "pass":
@@ -853,6 +859,7 @@ def build_qc_update_details(experiment, result, qc, state_updated):
             details["state_updated"] = False
             details["reason"] = "The result is inconclusive, so the tested node remains unresolved."
             details["recommended_action"] = "REPEAT " + experiment["name"]
+            details["repeat_required"] = True
 
         return details
 
@@ -864,11 +871,62 @@ def build_qc_update_details(experiment, result, qc, state_updated):
             "restriction, or candidate-level conclusions."
         )
         details["recommended_action"] = "REPEAT / CONFIRM " + experiment["name"]
+        details["repeat_required"] = True
         return details
 
     details["reason"] = "This result is not trustworthy enough to change the decision graph."
     details["recommended_action"] = "REPEAT / TROUBLESHOOT " + experiment["name"]
+    details["repeat_required"] = True
     return details
+
+
+def append_result_history(result_history, experiment_id, result, qc):
+    if result_history is None:
+        return
+
+    if experiment_id not in result_history:
+        result_history[experiment_id] = []
+
+    result_history[experiment_id].append({"result": result, "qc": qc})
+
+
+def has_confirmed_negative_result(result_history, experiment_id):
+    if result_history is None:
+        return False
+
+    experiment_history = result_history.get(experiment_id, [])
+
+    if len(experiment_history) < 2:
+        return False
+
+    last_two_results = experiment_history[-2:]
+
+    return all(
+        submitted_result["result"] == "negative"
+        and submitted_result["qc"] == "pass"
+        for submitted_result in last_two_results
+    )
+
+
+def mark_confirmation_required(update_details, experiment):
+    update_details["state_updated"] = False
+    update_details["repeat_required"] = True
+    update_details["reason"] = (
+        "This is the first trustworthy negative result for an experiment that "
+        "requires confirmation before applying its configured failure action."
+    )
+    update_details["recommended_action"] = "REPEAT / CONFIRM " + experiment["name"]
+
+
+def mark_confirmed_failure(update_details, experiment, action):
+    update_details["state_updated"] = True
+    update_details["confirmed_failure"] = True
+    update_details["confirmed_action"] = action.upper()
+    update_details["confirmed_scope"] = experiment.get("negative_scope", "")
+    update_details["reason"] = (
+        "Two consecutive negative results with QC PASS confirmed the failure "
+        "for this experiment."
+    )
 
 
 def print_qc_update_details(update_details):
@@ -886,8 +944,17 @@ def print_qc_update_details(update_details):
         print("\nRecommended action:")
         print(update_details["recommended_action"])
 
+    if update_details["confirmed_failure"]:
+        print("\nCONFIRMED FAILURE")
+        print("Action:", update_details["confirmed_action"])
+        print("Scope:", update_details["confirmed_scope"])
 
-def update_node_from_result(experiment_id, result, qc="pass"):
+    if update_details["final_decision"]:
+        print("\nFINAL DECISION")
+        print(update_details["final_decision"])
+
+
+def update_node_from_result(experiment_id, result, qc="pass", result_history=None):
     experiment = find_experiment(experiment_id)
 
     if experiment is None:
@@ -900,6 +967,7 @@ def update_node_from_result(experiment_id, result, qc="pass"):
 
     node_before_update = node.copy()
     normalized_qc = normalize_qc(qc)
+    append_result_history(result_history, experiment_id, result, normalized_qc)
     update_details = build_qc_update_details(
         experiment,
         result,
@@ -911,6 +979,37 @@ def update_node_from_result(experiment_id, result, qc="pass"):
         return experiment, node_before_update, node, update_details
 
     if result == "inconclusive" and experiment.get("inconclusive_action") == "repeat":
+        return experiment, node_before_update, node, update_details
+
+    negative_action = experiment.get("negative_action")
+
+    if result == "negative" and negative_action in ["repeat_or_prune", "repeat_or_kill"]:
+        if not has_confirmed_negative_result(result_history, experiment_id):
+            mark_confirmation_required(update_details, experiment)
+            return experiment, node_before_update, node, update_details
+
+        if negative_action == "repeat_or_prune":
+            node["confidence"] = max(node["confidence"] - 0.5, 0)
+            node["status"] = "contradicted"
+            mark_confirmed_failure(update_details, experiment, "prune")
+            return experiment, node_before_update, node, update_details
+
+        if experiment.get("negative_scope") == "candidate":
+            node["confidence"] = max(node["confidence"] - 0.5, 0)
+            node["status"] = "contradicted"
+            mark_confirmed_failure(update_details, experiment, "kill")
+            update_details["terminate_session"] = True
+            update_details["final_decision"] = "NO-GO"
+            update_details["reason"] = (
+                update_details["reason"]
+                + " The configured scope is candidate-level, so the session is terminated."
+            )
+            return experiment, node_before_update, node, update_details
+
+        mark_confirmation_required(update_details, experiment)
+        update_details["reason"] = (
+            "Confirmed repeat_or_kill behavior for non-candidate scope is not implemented yet."
+        )
         return experiment, node_before_update, node, update_details
 
     if result == "positive":
@@ -942,6 +1041,29 @@ def rank_experiments():
         key=lambda experiment_score: experiment_score["score"],
         reverse=True,
     )
+
+
+def prioritize_pending_repeat(ranked_experiments, pending_repeat_experiment_id):
+    if pending_repeat_experiment_id is None:
+        return ranked_experiments
+
+    pending_repeat_scores = [
+        experiment_score
+        for experiment_score in ranked_experiments
+        if experiment_score["experiment"]["id"] == pending_repeat_experiment_id
+    ]
+
+    if not pending_repeat_scores:
+        return ranked_experiments
+
+    other_scores = [
+        experiment_score
+        for experiment_score in ranked_experiments
+        if experiment_score["experiment"]["id"] != pending_repeat_experiment_id
+    ]
+
+    print("\nRepeat confirmation required; prioritizing repeat experiment.")
+    return pending_repeat_scores + other_scores
 
 
 def print_node_uncertainties():
@@ -1113,11 +1235,17 @@ def print_node_state(node):
 
 def run_interactive_session():
     round_number = 1
+    result_history = {}
+    pending_repeat_experiment_id = None
 
     while True:
         print("\n===== ROUND", str(round_number), "=====")
         print_node_uncertainties()
         ranked_experiments = rank_experiments()
+        ranked_experiments = prioritize_pending_repeat(
+            ranked_experiments,
+            pending_repeat_experiment_id,
+        )
         print_rankings(ranked_experiments)
         recommended = print_recommendation(ranked_experiments)
 
@@ -1166,6 +1294,7 @@ def run_interactive_session():
             recommended_experiment["id"],
             result,
             qc,
+            result_history,
         )
 
         print("\nSUBMITTED RESULT")
@@ -1179,8 +1308,21 @@ def run_interactive_session():
         print("\nNODE AFTER UPDATE")
         print_node_state(node_after_update)
 
+        if update_details["repeat_required"]:
+            pending_repeat_experiment_id = experiment["id"]
+        elif pending_repeat_experiment_id == experiment["id"]:
+            pending_repeat_experiment_id = None
+
+        if update_details["terminate_session"]:
+            print("Ending session because a confirmed candidate-level failure was reached.")
+            break
+
         print("\nRecalculating with updated in-memory state...")
         updated_ranked_experiments = rank_experiments()
+        updated_ranked_experiments = prioritize_pending_repeat(
+            updated_ranked_experiments,
+            pending_repeat_experiment_id,
+        )
         print_rankings(updated_ranked_experiments, "Updated ranked experiment scores")
         print_recommendation(updated_ranked_experiments, "UPDATED RECOMMENDED NEXT EXPERIMENT")
 
