@@ -898,6 +898,7 @@ def build_qc_update_details(experiment, result, qc, state_updated):
         "action_scope": "",
         "terminate_session": False,
         "final_decision": "",
+        "experiment_completed": False,
     }
 
     if qc == "pass":
@@ -1010,11 +1011,14 @@ def mark_scoped_kill(update_details, experiment):
 
 def mark_reprioritize(update_details, experiment):
     update_details["state_updated"] = True
+    update_details["experiment_completed"] = True
     update_details["action"] = "REPRIORITIZE"
     update_details["action_scope"] = experiment.get("negative_scope", "")
     update_details["reason"] = (
         "The result weakens this hypothesis but does not eliminate the path. "
-        "Confidence was reduced by an MVP heuristic amount."
+        "Confidence was reduced by an MVP heuristic amount. This experiment is "
+        "complete, but the scientific question remains uncertain. The planner "
+        "will shift attention to other experiments."
     )
 
 
@@ -1152,10 +1156,21 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
     return experiment, node_before_update, node, update_details
 
 
-def rank_experiments():
+def rank_experiments(completed_experiment_ids=None):
+    if completed_experiment_ids is None:
+        completed_experiment_ids = set()
+
     experiment_scores = []
 
     for experiment in scenario["experiments"]:
+        if experiment["id"] in completed_experiment_ids:
+            print(
+                "Skipping",
+                experiment["name"],
+                "because this experiment is already completed in the current session.",
+            )
+            continue
+
         if (
             is_experiment_eligible(experiment)
             and can_experiment_contribute_to_final_decision(experiment)
@@ -1363,11 +1378,12 @@ def run_interactive_session():
     round_number = 1
     result_history = {}
     pending_repeat_experiment_id = None
+    completed_experiment_ids = set()
 
     while True:
         print("\n===== ROUND", str(round_number), "=====")
         print_node_uncertainties()
-        ranked_experiments = rank_experiments()
+        ranked_experiments = rank_experiments(completed_experiment_ids)
         ranked_experiments = prioritize_pending_repeat(
             ranked_experiments,
             pending_repeat_experiment_id,
@@ -1439,12 +1455,15 @@ def run_interactive_session():
         elif pending_repeat_experiment_id == experiment["id"]:
             pending_repeat_experiment_id = None
 
+        if update_details["experiment_completed"]:
+            completed_experiment_ids.add(experiment["id"])
+
         if update_details["terminate_session"]:
             print("Ending session because a confirmed candidate-level failure was reached.")
             break
 
         print("\nRecalculating with updated in-memory state...")
-        updated_ranked_experiments = rank_experiments()
+        updated_ranked_experiments = rank_experiments(completed_experiment_ids)
         updated_ranked_experiments = prioritize_pending_repeat(
             updated_ranked_experiments,
             pending_repeat_experiment_id,
