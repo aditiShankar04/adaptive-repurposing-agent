@@ -1,0 +1,287 @@
+{
+  "scenario_id": "sildenafil-fgr-historical-001",
+  "scenario_type": "historical_replay",
+  "drug": "Sildenafil",
+  "disease": "Severe early-onset fetal growth restriction",
+  "goal": "Evaluate whether sildenafil should advance for severe early-onset fetal growth restriction, distinguishing biological plausibility from demonstrated clinical benefit and serious neonatal safety concerns.",
+  "replay": {
+    "mode": "clinical_efficacy_and_safety_historical_replay",
+    "known_final_outcome": "NO-GO",
+    "known_final_outcome_hidden_from_planner": true,
+    "description": "Begin with a plausible PDE5/NO-cGMP mechanism. Reveal UK and Dutch STRIDER outcomes without allowing later findings to influence earlier recommendations. Historical experiments are from separate trials, not a single sequential program."
+  },
+  "nodes": [
+    {
+      "id": "pde5_rationale",
+      "name": "PDE5 / NO-cGMP Rationale",
+      "question": "Could PDE5 inhibition plausibly improve uteroplacental vascular function?",
+      "node_type": "mechanism_branch",
+      "status": "supported",
+      "confidence": 0.75,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "placental_perfusion"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "placental_perfusion",
+      "name": "Uteroplacental Perfusion Response",
+      "question": "Does sildenafil improve disease-relevant placental perfusion at adequate exposure?",
+      "node_type": "biological_gate",
+      "status": "uncertain",
+      "confidence": 0.45,
+      "depends_on": [
+        "pde5_rationale"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "fetal_growth"
+      ],
+      "failure_scope": "path"
+    },
+    {
+      "id": "fetal_growth",
+      "name": "Fetal Growth Response",
+      "question": "Does any physiological improvement translate into better fetal growth?",
+      "node_type": "translational_gate",
+      "status": "uncertain",
+      "confidence": 0.35,
+      "depends_on": [
+        "placental_perfusion"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "perinatal_benefit"
+      ],
+      "failure_scope": "path"
+    },
+    {
+      "id": "pregnancy_prolongation",
+      "name": "Pregnancy Prolongation",
+      "question": "Does treatment meaningfully prolong pregnancy in severe early-onset FGR?",
+      "node_type": "clinical_gate",
+      "status": "uncertain",
+      "confidence": 0.4,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "perinatal_benefit"
+      ],
+      "failure_scope": "candidate"
+    },
+    {
+      "id": "perinatal_benefit",
+      "name": "Meaningful Perinatal Benefit",
+      "question": "Does sildenafil improve important neonatal or pregnancy outcomes?",
+      "node_type": "clinical_gate",
+      "status": "uncertain",
+      "confidence": 0.4,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "candidate",
+      "evidence": {
+        "gaps": [
+          "Clinical benefit not established at historical starting point."
+        ]
+      }
+    },
+    {
+      "id": "neonatal_safety",
+      "name": "Neonatal Safety / Pulmonary Hypertension",
+      "question": "Is the treatment acceptably safe for the fetus and newborn, including pulmonary hypertension risk?",
+      "node_type": "safety_gate",
+      "status": "uncertain",
+      "confidence": 0.5,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "candidate"
+    },
+    {
+      "id": "viability",
+      "name": "Repurposing Viability",
+      "question": "Should sildenafil advance for severe early-onset FGR given both efficacy and safety?",
+      "node_type": "final_decision",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "perinatal_benefit",
+        "neonatal_safety"
+      ],
+      "dependency_logic": "all",
+      "downstream": [],
+      "failure_scope": "candidate",
+      "decision_states": [
+        "GO",
+        "NO-GO",
+        "MORE EVIDENCE",
+        "RESTRICT"
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "id": "exp_perfusion",
+      "name": "Placental Vascular / Perfusion Assessment",
+      "tests_node": "placental_perfusion",
+      "cost": 2,
+      "time": 2,
+      "discriminating_power": 0.75,
+      "positive_action": "advance",
+      "negative_action": "repeat_or_prune",
+      "negative_scope": "placental_perfusion",
+      "inconclusive_action": "repeat",
+      "result_status": "not_run",
+      "historical_result_available": false,
+      "interpretation_notes": "Illustrative experimental option, not a claimed STRIDER historical result; check dose, assay quality, and model."
+    },
+    {
+      "id": "exp_growth",
+      "name": "Serial Ultrasound Fetal Growth Assessment",
+      "tests_node": "fetal_growth",
+      "cost": 3,
+      "time": 3,
+      "discriminating_power": 0.75,
+      "positive_action": "advance",
+      "negative_action": "repeat_or_prune",
+      "negative_scope": "fetal_growth",
+      "inconclusive_action": "repeat",
+      "result_status": "not_run",
+      "historical_result_available": false,
+      "interpretation_notes": "Illustrative standalone test, not a separately documented STRIDER outcome in this dataset."
+    },
+    {
+      "id": "exp_uk_prolongation",
+      "name": "UK STRIDER: Time from Randomization to Delivery",
+      "tests_node": "pregnancy_prolongation",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.9,
+      "positive_action": "advance",
+      "negative_action": "reprioritize",
+      "negative_scope": "pregnancy_prolongation",
+      "inconclusive_action": "repeat",
+      "historical_result": "negative",
+      "historical_result_hidden": true,
+      "interpretation_notes": "UK trial: median 17 days sildenafil vs 18 days placebo; no significant improvement. Negative = no demonstrated efficacy, not proof of no possible effect.",
+      "source": "https://pubmed.ncbi.nlm.nih.gov/30169244/"
+    },
+    {
+      "id": "exp_uk_perinatal",
+      "name": "UK STRIDER: Birthweight and Perinatal Outcomes",
+      "tests_node": "perinatal_benefit",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.9,
+      "positive_action": "advance",
+      "negative_action": "more_evidence",
+      "negative_scope": "perinatal_benefit",
+      "inconclusive_action": "repeat",
+      "historical_result": "negative",
+      "historical_result_hidden": true,
+      "interpretation_notes": "UK trial did not demonstrate meaningful improvements in birthweight or major perinatal outcomes; endpoints from same trial are correlated, not independent experiments.",
+      "source": "https://pubmed.ncbi.nlm.nih.gov/30169244/"
+    },
+    {
+      "id": "exp_dutch_perinatal",
+      "name": "Dutch STRIDER: Perinatal Mortality / Major Morbidity",
+      "tests_node": "perinatal_benefit",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.95,
+      "positive_action": "advance",
+      "negative_action": "kill",
+      "negative_scope": "candidate",
+      "inconclusive_action": "repeat",
+      "historical_result": "negative",
+      "historical_result_hidden": true,
+      "interpretation_notes": "Dutch trial: 60.2% sildenafil vs 54.2% placebo for primary composite; no demonstrated benefit. A negative result alone requires interpretation of power, confidence intervals, and safety.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7301225/"
+    },
+    {
+      "id": "exp_dutch_safety",
+      "name": "Dutch STRIDER: Neonatal Pulmonary Hypertension Safety",
+      "tests_node": "neonatal_safety",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 1.0,
+      "positive_action": "advance",
+      "negative_action": "kill",
+      "negative_scope": "candidate",
+      "inconclusive_action": "repeat",
+      "historical_result": "negative",
+      "historical_result_hidden": true,
+      "interpretation_notes": "Unfavorable safety outcome: neonatal pulmonary hypertension 18.8% sildenafil vs 5.1% placebo; trial stopped early. Safety review is mandatory; not an autonomous clinical decision.",
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7301225/",
+      "safety_override": true
+    },
+    {
+      "id": "exp_followup",
+      "name": "UK STRIDER: Two-Year Child Follow-up",
+      "tests_node": "perinatal_benefit",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.8,
+      "positive_action": "advance",
+      "negative_action": "reprioritize",
+      "negative_scope": "perinatal_benefit",
+      "inconclusive_action": "repeat",
+      "historical_result": "negative",
+      "historical_result_hidden": true,
+      "interpretation_notes": "Later follow-up did not demonstrate improved neurodevelopment; reveal only after the original trials in chronology-aware replay.",
+      "source": "https://pubmed.ncbi.nlm.nih.gov/38923115/"
+    }
+  ],
+  "historical_ground_truth": {
+    "final_decision": "NO-GO",
+    "uk_strider": {
+      "randomized": 135,
+      "sildenafil": 70,
+      "placebo": 65,
+      "median_days_to_delivery_sildenafil": 17,
+      "median_days_to_delivery_placebo": 18
+    },
+    "dutch_strider": {
+      "randomized": 216,
+      "primary_composite_sildenafil_percent": 60.2,
+      "primary_composite_placebo_percent": 54.2,
+      "neonatal_pulmonary_hypertension_sildenafil_percent": 18.8,
+      "neonatal_pulmonary_hypertension_placebo_percent": 5.1,
+      "trial_stopped_early": true
+    },
+    "planner_visibility": "Historical results hidden until selected/revealed; later follow-up cannot be revealed in an earlier replay period."
+  },
+  "planner_rules": {
+    "dependency_semantics": {
+      "all": "All listed required nodes must remain viable.",
+      "any": "At least one alternative remains viable.",
+      "none": "No prerequisite."
+    },
+    "kill_guardrail": "Mechanism failure or an uninterpretable assay alone cannot kill the candidate. Strong, trustworthy clinical evidence or unacceptable safety may justify candidate NO-GO.",
+    "qc_guardrail": "QUESTIONABLE or FAIL QC cannot automatically cause candidate kill; urgent safety signals must trigger human review even before definitive causal confirmation.",
+    "safety_override": "Credible serious neonatal harm triggers safety review / pause and may override promising mechanism results; human review required.",
+    "endpoint_correlation": "UK efficacy outcomes are correlated endpoints of one trial; do not double count them as independent replication.",
+    "result_semantics": "Negative means unfavorable for candidate: lack of efficacy or excess harm; it does not mean a negative laboratory measurement."
+  },
+  "assumptions": [
+    "Cost/time values are normalized 1-5 hackathon estimates, not measured trial budgets or durations.",
+    "Initial confidence values are illustrative and not calibrated probabilities.",
+    "Placental perfusion and standalone fetal growth tests are illustrative options, not asserted to have known historical results in this file.",
+    "Historical trial outcomes should be revealed with appropriate time ordering; UK and Dutch STRIDER were separate studies.",
+    "The Dutch pulmonary hypertension finding is a safety signal, not proof of the causal mechanism.",
+    "Final NO-GO is for sildenafil for severe early-onset FGR, not all established sildenafil indications."
+  ],
+  "sources": [
+    "https://pubmed.ncbi.nlm.nih.gov/30169244/",
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC7301225/",
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC8964651/",
+    "https://pubmed.ncbi.nlm.nih.gov/38923115/"
+  ]
+}
