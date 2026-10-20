@@ -135,9 +135,8 @@ function App() {
   }
 
   const scenario = plannerState.scenario
-  const recommendation = plannerState.recommendation
-  const topRankedExperiment = plannerState.ranked_experiments[0]
-  const recommendedNodeId = recommendation?.node_id
+  const topRankedExperiment = plannerState.ranked_experiments[0] ?? null 
+  const recommendedNodeId = topRankedExperiment?.node_id ?? null
   const graphNodes = createGraphNodes(scenario.nodes, recommendedNodeId)
   const graphEdges = createGraphEdges(scenario.nodes)
   const selectedNode = scenario.nodes.find((node) => node.id === selectedNodeId) ?? scenario.nodes[0]
