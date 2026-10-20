@@ -13,15 +13,17 @@ const nodePositions = {
   mechanism: { x: 0, y: 0 },
   target_engagement: { x: 0, y: 160 },
   efficacy: { x: 0, y: 320 },
-  safety: { x: -280, y: 320 },
   exposure: { x: 280, y: 320 },
   clinical_signal: { x: 0, y: 0 },
   beta_mechanism: { x: -320, y: 160 },
+  apoptosis_mechanism: { x: -160, y: 160 },
+  vegf_mechanism: { x: 160, y: 160 },
   beta_independent: { x: 0, y: 160 },
   sox18: { x: 320, y: 320 },
   cellular_effect: { x: 0, y: 360 },
   in_vivo_effect: { x: 0, y: 540 },
   viability: { x: 0, y: 720 },
+  safety: { x: -360, y: 540 },
 }
 
 function formatConfidence(confidence) {
@@ -183,7 +185,42 @@ function App() {
     }
   }
 
+  async function handleRevealHistoricalEvidence() {
+    if (!sessionId || !topRankedExperiment) {
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/reveal-historical-result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error ?? `Planner API returned ${response.status}`)
+      }
+
+      const transition = data.transition
+      setPlannerState(data.planner_state)
+      setLastUpdate(data)
+      setSelectedNodeId(transition.node_after_update?.id ?? data.planner_state.scenario.nodes[0]?.id ?? null)
+    } catch (submitError) {
+      setError(submitError.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const sessionTerminated = plannerState.planner.terminated
+  const historicalReplay = scenario.type === 'historical_replay'
+  const displayedUpdate = lastUpdate?.transition ?? lastUpdate
+  const historicalEvidence = lastUpdate?.historical_evidence
+  const newRecommendation = plannerState.ranked_experiments[0]
 
   return (
     <main className="app-shell">
@@ -274,58 +311,90 @@ function App() {
                   {topRankedExperiment.metrics.time}.
                 </p>
 
-                <form className="result-form" onSubmit={handleSubmitResult}>
-                  <h3>Submit Result</h3>
-                  <label>
-                    <span>Result</span>
-                    <select
-                      value={selectedResult}
-                      onChange={(event) => setSelectedResult(event.target.value)}
-                      disabled={sessionTerminated || submitting}
-                    >
-                      <option value="positive">Positive</option>
-                      <option value="negative">Negative</option>
-                      <option value="inconclusive">Inconclusive</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>QC</span>
-                    <select
-                      value={selectedQc}
-                      onChange={(event) => setSelectedQc(event.target.value)}
-                      disabled={sessionTerminated || submitting}
-                    >
-                      <option value="pass">Pass</option>
-                      <option value="questionable">Questionable</option>
-                      <option value="fail">Fail</option>
-                    </select>
-                  </label>
-                  <button type="submit" disabled={sessionTerminated || submitting}>
-                    {submitting ? 'Submitting...' : 'Submit Result'}
-                  </button>
-                </form>
+                {historicalReplay ? (
+                  <section className="result-form">
+                    <h3>Historical Evidence Replay</h3>
+                    <p className="muted">Historical evidence is revealed only after ARGUS selects the next experiment.</p>
+                    <button type="button" disabled={sessionTerminated || submitting} onClick={handleRevealHistoricalEvidence}>
+                      {submitting ? 'Revealing...' : 'Reveal Historical Evidence'}
+                    </button>
+                  </section>
+                ) : (
+                  <form className="result-form" onSubmit={handleSubmitResult}>
+                    <h3>Submit Result</h3>
+                    <label>
+                      <span>Result</span>
+                      <select
+                        value={selectedResult}
+                        onChange={(event) => setSelectedResult(event.target.value)}
+                        disabled={sessionTerminated || submitting}
+                      >
+                        <option value="positive">Positive</option>
+                        <option value="negative">Negative</option>
+                        <option value="inconclusive">Inconclusive</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>QC</span>
+                      <select
+                        value={selectedQc}
+                        onChange={(event) => setSelectedQc(event.target.value)}
+                        disabled={sessionTerminated || submitting}
+                      >
+                        <option value="pass">Pass</option>
+                        <option value="questionable">Questionable</option>
+                        <option value="fail">Fail</option>
+                      </select>
+                    </label>
+                    <button type="submit" disabled={sessionTerminated || submitting}>
+                      {submitting ? 'Submitting...' : 'Submit Result'}
+                    </button>
+                  </form>
+                )}
               </>
             ) : (
               <p className="muted">{plannerState.planner.message ?? 'No useful experiment is currently available.'}</p>
             )}
 
-            {lastUpdate ? (
+            {displayedUpdate ? (
               <section className="update-panel">
-                <p className="eyebrow">Last Update</p>
-                <h3>{lastUpdate.experiment.name}</h3>
-                <p>Result: <strong>{lastUpdate.submitted_result.result}</strong> | QC: <strong>{lastUpdate.submitted_result.qc}</strong></p>
-                <p>{lastUpdate.update_details.reason}</p>
-                {lastUpdate.update_details.recommended_action ? (
-                  <p><strong>{lastUpdate.update_details.recommended_action}</strong></p>
+                <p className="eyebrow">{historicalEvidence ? 'Historical Evidence Replay' : 'Last Update'}</p>
+                <h3>{displayedUpdate.experiment.name}</h3>
+                {historicalEvidence ? (
+                  <>
+                    <p>Historical outcome: <strong>{historicalEvidence.historical_outcome}</strong></p>
+                    <p>Evidence class: <strong>{historicalEvidence.evidence_class}</strong></p>
+                    <p>{historicalEvidence.summary}</p>
+                    <p>Applied planner result: <strong>{historicalEvidence.applied_result}</strong> | QC: <strong>{historicalEvidence.qc}</strong></p>
+                    {historicalEvidence.historical_action ? (
+                      <p><strong>Historical action: {historicalEvidence.historical_action}</strong></p>
+                    ) : null}
+                    {historicalEvidence.scope ? (
+                      <p>Scope: <strong>{historicalEvidence.scope}</strong></p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p>Result: <strong>{displayedUpdate.submitted_result.result}</strong> | QC: <strong>{displayedUpdate.submitted_result.qc}</strong></p>
+                )}
+                <p>{displayedUpdate.update_details.reason}</p>
+                <p>
+                  Node: <strong>{displayedUpdate.node_before_update.status}</strong> ({formatConfidence(displayedUpdate.node_before_update.confidence)})
+                  {' '}→ <strong>{displayedUpdate.node_after_update.status}</strong> ({formatConfidence(displayedUpdate.node_after_update.confidence)})
+                </p>
+                {displayedUpdate.update_details.recommended_action ? (
+                  <p><strong>{displayedUpdate.update_details.recommended_action}</strong></p>
                 ) : null}
-                {lastUpdate.update_details.action ? (
-                  <p><strong>ACTION: {lastUpdate.update_details.action}</strong></p>
+                {displayedUpdate.update_details.action ? (
+                  <p><strong>ACTION: {displayedUpdate.update_details.action}</strong></p>
                 ) : null}
-                {lastUpdate.update_details.confirmed_failure ? (
-                  <p><strong>CONFIRMED FAILURE: {lastUpdate.update_details.confirmed_action}</strong></p>
+                {displayedUpdate.update_details.confirmed_failure ? (
+                  <p><strong>CONFIRMED FAILURE: {displayedUpdate.update_details.confirmed_action}</strong></p>
                 ) : null}
-                {lastUpdate.update_details.final_decision ? (
-                  <p><strong>FINAL DECISION: {lastUpdate.update_details.final_decision}</strong></p>
+                {displayedUpdate.update_details.final_decision ? (
+                  <p><strong>FINAL DECISION: {displayedUpdate.update_details.final_decision}</strong></p>
+                ) : null}
+                {newRecommendation ? (
+                  <p>New recommendation: <strong>{newRecommendation.experiment.name}</strong></p>
                 ) : null}
               </section>
             ) : null}

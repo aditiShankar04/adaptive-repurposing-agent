@@ -12,6 +12,7 @@ from experiment_selector import (
     get_session_planner_state,
     load_scenario,
     normalize_qc,
+    reveal_historical_result,
     serialize_session_status,
 )
 
@@ -21,7 +22,8 @@ PORT = 8000
 
 SCENARIO_FILES = {
     "demo": PROJECT_ROOT / "data" / "demo-scenario.json",
-    "propranolol": PROJECT_ROOT / "data" / "propranolol-scenario.json",
+    "propranolol": PROJECT_ROOT / "data" / "propranolol-scenario-v2.json",
+    "propranolol-v1": PROJECT_ROOT / "data" / "propranolol-scenario.json",
     "xanomeline": PROJECT_ROOT / "data" / "xanomeline-pdp-scenario.json",
 }
 
@@ -89,6 +91,14 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
             and path_parts[3] == "result"
         ):
             self.handle_session_result(path_parts[2])
+            return
+
+        if (
+            len(path_parts) == 4
+            and path_parts[:2] == ["api", "sessions"]
+            and path_parts[3] == "reveal-historical-result"
+        ):
+            self.handle_historical_reveal(path_parts[2])
             return
 
         self.send_json(404, {"error": "Not found"})
@@ -170,6 +180,31 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json(200, response)
 
+    def handle_historical_reveal(self, session_id):
+        with sessions_lock:
+            session_state = sessions.get(session_id)
+
+            if session_state is None:
+                self.send_json(404, {"error": "Unknown session"})
+                return
+
+            if session_state["terminated"]:
+                self.send_json(409, {"error": "Session is terminated"})
+                return
+
+            try:
+                reveal = reveal_historical_result(session_state)
+            except ValueError as error:
+                self.send_json(400, {"error": str(error)})
+                return
+
+            response = {
+                "session_id": session_id,
+                **reveal,
+            }
+
+        self.send_json(200, response)
+
     def handle_session_result(self, session_id):
         request_json = self.read_json_body()
 
@@ -244,10 +279,11 @@ def main():
     server = ThreadingHTTPServer((HOST, PORT), PlannerRequestHandler)
     print("Planner API running at http://" + HOST + ":" + str(PORT))
     print("Available endpoints:")
-    print("  GET  /api/planner?scenario=demo|propranolol|xanomeline")
+    print("  GET  /api/planner?scenario=demo|propranolol|propranolol-v1|xanomeline")
     print("  POST /api/sessions")
     print("  GET  /api/sessions/{session_id}")
     print("  POST /api/sessions/{session_id}/result")
+    print("  POST /api/sessions/{session_id}/reveal-historical-result")
     server.serve_forever()
 
 

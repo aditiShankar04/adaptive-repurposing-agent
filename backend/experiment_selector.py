@@ -27,6 +27,57 @@ def resolve_scenario_file(scenario_path):
     return scenario_file
 
 
+def is_hidden_planner_key(key):
+    return (
+        key in [
+            "historical_ground_truth",
+            "historical_result",
+            "historical_result_hidden",
+            "known_final_outcome",
+        ]
+        or key.endswith("_hidden")
+        or key.endswith("_hidden_from_planner")
+    )
+
+
+def sanitize_experiment_for_planner(experiment):
+    sanitized_experiment = deepcopy(experiment)
+
+    for key in list(sanitized_experiment.keys()):
+        if is_hidden_planner_key(key):
+            sanitized_experiment.pop(key)
+
+    return sanitized_experiment
+
+
+def sanitize_scenario_for_planner(scenario_state):
+    sanitized_scenario = deepcopy(scenario_state)
+
+    for key in list(sanitized_scenario.keys()):
+        if is_hidden_planner_key(key):
+            sanitized_scenario.pop(key)
+
+    for nested_key in ["replay", "exploration"]:
+        if nested_key not in sanitized_scenario:
+            continue
+
+        nested_value = sanitized_scenario[nested_key]
+
+        if not isinstance(nested_value, dict):
+            continue
+
+        for key in list(nested_value.keys()):
+            if is_hidden_planner_key(key):
+                nested_value.pop(key)
+
+    sanitized_scenario["experiments"] = [
+        sanitize_experiment_for_planner(experiment)
+        for experiment in sanitized_scenario.get("experiments", [])
+    ]
+
+    return sanitized_scenario
+
+
 def calculate_uncertainty(node):
     return 1 - node["confidence"]
 
@@ -1218,6 +1269,16 @@ def mark_reprioritize(update_details, experiment):
     )
 
 
+def mark_prune(update_details, experiment):
+    update_details["state_updated"] = True
+    update_details["action"] = "PRUNE"
+    update_details["action_scope"] = experiment.get("negative_scope", "")
+    update_details["reason"] = (
+        "A trustworthy negative result pruned this branch or path. The candidate "
+        "is not automatically terminated unless the configured scope is candidate-level."
+    )
+
+
 def mark_more_evidence(update_details):
     update_details["state_updated"] = False
     update_details["experiment_completed"] = True
@@ -1310,6 +1371,12 @@ def update_node_from_result_in_state(scenario_state, experiment_id, result, qc="
     if result == "negative" and negative_action == "reprioritize":
         node["confidence"] = max(node["confidence"] - 0.2, 0)
         mark_reprioritize(update_details, experiment)
+        return experiment, node_before_update, node.copy(), update_details
+
+    if result == "negative" and negative_action == "prune":
+        node["confidence"] = max(node["confidence"] - 0.5, 0)
+        node["status"] = "contradicted"
+        mark_prune(update_details, experiment)
         return experiment, node_before_update, node.copy(), update_details
 
     if (
@@ -1636,7 +1703,7 @@ def serialize_experiment_score(experiment_score, rank):
 
     return {
         "rank": rank,
-        "experiment": experiment,
+        "experiment": sanitize_experiment_for_planner(experiment),
         "node": {
             "id": node["id"],
             "name": node["name"],
@@ -1666,6 +1733,8 @@ def get_planner_state(
 ):
     if completed_experiment_ids is None:
         completed_experiment_ids = set()
+
+    sanitized_scenario = sanitize_scenario_for_planner(scenario_state)
 
     if terminated:
         ranked_experiments = []
@@ -1730,13 +1799,13 @@ def get_planner_state(
     return {
         "scenario": {
             "key": scenario_key,
-            "id": scenario_state.get("scenario_id"),
-            "type": scenario_state.get("scenario_type"),
-            "drug": scenario_state["drug"],
-            "disease": scenario_state["disease"],
-            "goal": scenario_state.get("goal"),
-            "nodes": scenario_state["nodes"],
-            "experiments": scenario_state["experiments"],
+            "id": sanitized_scenario.get("scenario_id"),
+            "type": sanitized_scenario.get("scenario_type"),
+            "drug": sanitized_scenario["drug"],
+            "disease": sanitized_scenario["disease"],
+            "goal": sanitized_scenario.get("goal"),
+            "nodes": sanitized_scenario["nodes"],
+            "experiments": sanitized_scenario["experiments"],
         },
         "ranked_experiments": serialized_ranked_experiments,
         "recommendation": recommendation,
@@ -1786,18 +1855,16 @@ def serialize_session_status(session_state):
     }
 
 
-def apply_experiment_result(session_state, experiment_id, result, qc):
-    if session_state["terminated"]:
-        raise ValueError("Session is terminated")
-
-    experiment, node_before_update, node_after_update, update_details = update_node_from_result_in_state(
-        session_state["scenario_state"],
-        experiment_id,
-        result,
-        qc,
-        session_state["result_history"],
-    )
-
+def finalize_session_transition(
+    session_state,
+    experiment,
+    experiment_id,
+    result,
+    qc,
+    node_before_update,
+    node_after_update,
+    update_details,
+):
     if update_details["repeat_required"]:
         session_state["pending_repeat_experiment_id"] = experiment["id"]
     elif session_state["pending_repeat_experiment_id"] == experiment["id"]:
@@ -1816,12 +1883,165 @@ def apply_experiment_result(session_state, experiment_id, result, qc):
             "result": result,
             "qc": normalize_qc(qc),
         },
-        "experiment": experiment,
+        "experiment": sanitize_experiment_for_planner(experiment),
         "node_before_update": node_before_update,
         "node_after_update": node_after_update,
         "update_details": update_details,
         "session": serialize_session_status(session_state),
         "planner_state": get_session_planner_state(session_state),
+    }
+
+
+def apply_experiment_result(session_state, experiment_id, result, qc):
+    if session_state["terminated"]:
+        raise ValueError("Session is terminated")
+
+    experiment, node_before_update, node_after_update, update_details = update_node_from_result_in_state(
+        session_state["scenario_state"],
+        experiment_id,
+        result,
+        qc,
+        session_state["result_history"],
+    )
+
+    return finalize_session_transition(
+        session_state,
+        experiment,
+        experiment_id,
+        result,
+        qc,
+        node_before_update,
+        node_after_update,
+        update_details,
+    )
+
+
+def apply_positive_with_restrictions(session_state, experiment_id, qc, historical_result):
+    if session_state["terminated"]:
+        raise ValueError("Session is terminated")
+
+    experiment = find_experiment_in_state(session_state["scenario_state"], experiment_id)
+
+    if experiment is None:
+        raise ValueError("Unknown experiment_id: " + experiment_id)
+
+    node = find_node_in_state(session_state["scenario_state"], experiment["tests_node"])
+
+    if node is None:
+        raise ValueError("Experiment tests unknown node: " + experiment["tests_node"])
+
+    normalized_qc = normalize_qc(qc)
+
+    if normalized_qc != "pass":
+        return apply_experiment_result(session_state, experiment_id, "positive", normalized_qc)
+
+    node_before_update = node.copy()
+    append_result_history(session_state["result_history"], experiment_id, "positive", normalized_qc)
+    update_details = build_qc_update_details(
+        experiment,
+        "positive",
+        normalized_qc,
+        True,
+    )
+    node["confidence"] = min(node["confidence"] + 0.5, 1)
+    node["status"] = "supported"
+    node["restriction_active"] = True
+    node["restriction_source_experiment"] = experiment["id"]
+    update_details["action"] = "RESTRICT"
+    update_details["action_scope"] = historical_result.get(
+        "scope",
+        experiment.get("negative_scope", ""),
+    )
+    update_details["reason"] = (
+        "Historical evidence supports this node while requiring regimen, "
+        "population, or monitoring restrictions. The candidate remains viable."
+    )
+    update_details["historical_outcome"] = "positive_with_restrictions"
+
+    return finalize_session_transition(
+        session_state,
+        experiment,
+        experiment_id,
+        "positive",
+        normalized_qc,
+        node_before_update,
+        node.copy(),
+        update_details,
+    )
+
+
+def build_historical_evidence(experiment, historical_result, applied_result, qc):
+    return {
+        "experiment_id": experiment["id"],
+        "experiment_name": experiment["name"],
+        "historical_outcome": historical_result.get("planner_outcome"),
+        "applied_result": applied_result,
+        "qc": normalize_qc(qc),
+        "evidence_class": historical_result.get("evidence_class"),
+        "summary": historical_result.get("summary"),
+        "historical_action": historical_result.get("planner_action"),
+        "scope": historical_result.get("scope"),
+        "candidate_survives": historical_result.get("candidate_survives"),
+    }
+
+
+def reveal_historical_result(session_state):
+    if session_state["terminated"]:
+        raise ValueError("Session is terminated")
+
+    scenario_state = session_state["scenario_state"]
+
+    if scenario_state.get("scenario_type") != "historical_replay":
+        raise ValueError("Historical replay is only available for historical_replay scenarios")
+
+    planner_state_before_reveal = get_session_planner_state(session_state)
+    recommendation = planner_state_before_reveal.get("recommendation")
+
+    if recommendation is None:
+        raise ValueError("No current recommendation is available to reveal")
+
+    experiment_id = recommendation["experiment_id"]
+    experiment = find_experiment_in_state(scenario_state, experiment_id)
+
+    if experiment is None:
+        raise ValueError("Recommended experiment is missing from scenario state: " + experiment_id)
+
+    historical_result = experiment.get("historical_result")
+
+    if historical_result is None:
+        raise ValueError("Recommended experiment has no historical_result: " + experiment_id)
+
+    historical_outcome = historical_result.get("planner_outcome")
+    qc = historical_result.get("qc", "pass")
+
+    if historical_outcome in ["positive", "negative", "inconclusive"]:
+        transition = apply_experiment_result(
+            session_state,
+            experiment_id,
+            historical_outcome,
+            qc,
+        )
+        applied_result = historical_outcome
+    elif historical_outcome == "positive_with_restrictions":
+        transition = apply_positive_with_restrictions(
+            session_state,
+            experiment_id,
+            qc,
+            historical_result,
+        )
+        applied_result = "positive"
+    else:
+        raise ValueError("Unsupported historical planner_outcome: " + str(historical_outcome))
+
+    return {
+        "historical_evidence": build_historical_evidence(
+            experiment,
+            historical_result,
+            applied_result,
+            qc,
+        ),
+        "transition": transition,
+        "planner_state": transition["planner_state"],
     }
 
 
