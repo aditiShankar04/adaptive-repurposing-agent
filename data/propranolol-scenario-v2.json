@@ -1,0 +1,346 @@
+{
+  "scenario_id": "propranolol-ih-historical-002",
+  "scenario_type": "historical_replay",
+  "drug": "Propranolol",
+  "disease": "Infantile hemangioma",
+  "goal": "Test whether the planner reaches the known GO outcome while pruning failed mechanisms, handling mixed evidence, and avoiding incorrect candidate kills.",
+  "replay": {
+    "known_final_outcome": "GO",
+    "known_final_outcome_hidden_from_planner": true,
+    "description": "Reveal normalized historical evidence only after the planner selects an experiment."
+  },
+  "nodes": [
+    {
+      "id": "clinical_signal",
+      "name": "Clinical Treatment Signal",
+      "question": "Does propranolol produce a real IH treatment effect?",
+      "node_type": "candidate_gate",
+      "status": "supported",
+      "confidence": 0.7,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "candidate"
+    },
+    {
+      "id": "beta_mechanism",
+      "name": "Beta-Adrenergic Mechanism",
+      "question": "Is beta-adrenergic signaling an important mediator?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.45,
+      "depends_on": [
+        "clinical_signal"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "cellular_effect"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "apoptosis_mechanism",
+      "name": "Apoptosis Mechanism",
+      "question": "Does propranolol depend on inducing apoptosis at relevant concentrations?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.4,
+      "depends_on": [
+        "clinical_signal"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "cellular_effect"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "vegf_mechanism",
+      "name": "VEGF / Anti-Angiogenic Mechanism",
+      "question": "Is VEGF suppression a major explanation for the clinical effect?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.4,
+      "depends_on": [
+        "clinical_signal"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "cellular_effect"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "beta_independent",
+      "name": "Beta-Independent Activity",
+      "question": "Is there meaningful anti-IH activity independent of strong beta blockade?",
+      "node_type": "mechanism_branch",
+      "status": "uncertain",
+      "confidence": 0.35,
+      "depends_on": [
+        "clinical_signal"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "sox18",
+        "cellular_effect"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "sox18",
+      "name": "SOX18 Mechanism",
+      "question": "Does R(+) propranolol interfere with SOX18 function?",
+      "node_type": "mechanism_subbranch",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "beta_independent"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "cellular_effect"
+      ],
+      "failure_scope": "branch"
+    },
+    {
+      "id": "cellular_effect",
+      "name": "Disease-Relevant Cellular Effect",
+      "question": "Does at least one viable mechanism alter disease-relevant cell or vascular behavior?",
+      "node_type": "biological_gate",
+      "status": "uncertain",
+      "confidence": 0.35,
+      "depends_on": [
+        "beta_mechanism",
+        "apoptosis_mechanism",
+        "vegf_mechanism",
+        "beta_independent",
+        "sox18"
+      ],
+      "dependency_logic": "any",
+      "downstream": [
+        "in_vivo_effect"
+      ],
+      "failure_scope": "path"
+    },
+    {
+      "id": "in_vivo_effect",
+      "name": "In-Vivo Disease-Relevant Effect",
+      "question": "Does the effect reduce disease-relevant vessel formation in vivo?",
+      "node_type": "translational_gate",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "cellular_effect"
+      ],
+      "dependency_logic": "all",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "path"
+    },
+    {
+      "id": "safety",
+      "name": "Pediatric Safety and Tolerability",
+      "question": "Is an effective regimen manageable with appropriate restrictions and monitoring?",
+      "node_type": "candidate_gate",
+      "status": "uncertain",
+      "confidence": 0.45,
+      "depends_on": [],
+      "dependency_logic": "none",
+      "downstream": [
+        "viability"
+      ],
+      "failure_scope": "regimen_or_population"
+    },
+    {
+      "id": "viability",
+      "name": "Clinical Viability",
+      "question": "Should propranolol advance for proliferating IH?",
+      "node_type": "final_decision",
+      "status": "unexplored",
+      "confidence": 0.2,
+      "depends_on": [
+        "clinical_signal",
+        "in_vivo_effect",
+        "safety"
+      ],
+      "dependency_logic": "all",
+      "downstream": [],
+      "decision_states": [
+        "GO",
+        "NO-GO",
+        "MORE EVIDENCE",
+        "RESTRICT"
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "id": "exp_beta_signaling",
+      "name": "HemSC Beta-AR / cAMP / MAPK Functional Assay",
+      "tests_node": "beta_mechanism",
+      "cost": 2,
+      "time": 1,
+      "discriminating_power": 0.8,
+      "historical_result": {
+        "planner_outcome": "positive",
+        "evidence_class": "observed_historical",
+        "summary": "Published HemSC experiments supported beta-adrenergic involvement through signaling and cell-behavior effects.",
+        "planner_action": "advance",
+        "scope": "beta_mechanism",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_apoptosis",
+      "name": "Apoptosis / Caspase Assay at Relevant Concentrations",
+      "tests_node": "apoptosis_mechanism",
+      "cost": 2,
+      "time": 1,
+      "discriminating_power": 0.9,
+      "historical_result": {
+        "planner_outcome": "negative",
+        "evidence_class": "observed_historical",
+        "summary": "At relevant inhibitory concentrations, published studies did not find convincing apoptosis/caspase activation sufficient to explain the anti-IH effect; apoptosis appeared under some higher-concentration conditions.",
+        "planner_action": "prune",
+        "scope": "apoptosis_mechanism",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_vegf",
+      "name": "VEGF / VEGFR Anti-Angiogenic Evidence Assessment",
+      "tests_node": "vegf_mechanism",
+      "cost": 2,
+      "time": 1,
+      "discriminating_power": 0.75,
+      "historical_result": {
+        "planner_outcome": "inconclusive",
+        "evidence_class": "composite_historical",
+        "summary": "Historical VEGF/VEGFR findings were mixed and did not consistently track clinical response.",
+        "planner_action": "reprioritize",
+        "scope": "vegf_mechanism",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_enantiomer",
+      "name": "R(+) vs Racemic/S(-) Propranolol Functional Comparison",
+      "tests_node": "beta_independent",
+      "cost": 3,
+      "time": 1,
+      "discriminating_power": 0.95,
+      "historical_result": {
+        "planner_outcome": "positive",
+        "evidence_class": "observed_historical",
+        "summary": "R(+) propranolol retained anti-IH activity in preclinical assays despite much weaker conventional beta-blocking activity.",
+        "planner_action": "advance",
+        "scope": "beta_independent",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_sox18",
+      "name": "SOX18 Target-Engagement / Transcription Assay",
+      "tests_node": "sox18",
+      "cost": 3,
+      "time": 2,
+      "discriminating_power": 0.95,
+      "historical_result": {
+        "planner_outcome": "positive",
+        "evidence_class": "observed_historical",
+        "summary": "Preclinical experiments supported interference with SOX18 transcriptional activity and protein interactions.",
+        "planner_action": "advance",
+        "scope": "sox18",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_diff",
+      "name": "HemSC Endothelial Differentiation / Vasculogenesis Assay",
+      "tests_node": "cellular_effect",
+      "cost": 3,
+      "time": 2,
+      "discriminating_power": 0.85,
+      "historical_result": {
+        "planner_outcome": "positive",
+        "evidence_class": "observed_historical",
+        "summary": "R(+) propranolol inhibited HemSC endothelial differentiation and vasculogenic behavior in published preclinical work.",
+        "planner_action": "advance",
+        "scope": "cellular_effect",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_xenograft",
+      "name": "Patient-Derived IH Vessel-Formation / Xenograft Model",
+      "tests_node": "in_vivo_effect",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 0.85,
+      "historical_result": {
+        "planner_outcome": "positive",
+        "evidence_class": "observed_historical",
+        "summary": "Published preclinical in-vivo evidence supported reduced human vessel formation with R(+) propranolol.",
+        "planner_action": "advance",
+        "scope": "in_vivo_effect",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_safety",
+      "name": "Pediatric Dose / Safety Evidence",
+      "tests_node": "safety",
+      "cost": 5,
+      "time": 4,
+      "discriminating_power": 0.9,
+      "historical_result": {
+        "planner_outcome": "positive_with_restrictions",
+        "evidence_class": "composite_historical",
+        "summary": "Clinical evidence supported an acceptable benefit-risk profile with important contraindications, feeding guidance, monitoring, and known beta-blocker risks.",
+        "planner_action": "restrict",
+        "scope": "regimen_or_population",
+        "candidate_survives": true
+      }
+    },
+    {
+      "id": "exp_clinical_confirm",
+      "name": "Randomized Propranolol vs Placebo Efficacy Trial",
+      "tests_node": "clinical_signal",
+      "cost": 5,
+      "time": 5,
+      "discriminating_power": 1.0,
+      "historical_result": {
+        "planner_outcome": "positive",
+        "evidence_class": "observed_historical",
+        "summary": "The selected regimen achieved complete or nearly complete resolution in 60% versus 4% with placebo at week 24.",
+        "planner_action": "advance",
+        "scope": "candidate",
+        "candidate_survives": true
+      }
+    }
+  ],
+  "historical_ground_truth": {
+    "final_decision": "GO",
+    "interpretation": "Clinical efficacy supports GO, while the mechanistic story is multifactorial: some proposed mechanisms were supported, apoptosis was weakened, and VEGF evidence was mixed.",
+    "planner_visibility": "Hidden until corresponding evidence is revealed."
+  },
+  "planner_rules": {
+    "dependency_semantics": {
+      "all": "All required dependencies must remain viable.",
+      "any": "At least one alternative route must remain viable.",
+      "none": "No prerequisite."
+    },
+    "kill_guardrail": "Mechanism-level negatives cannot automatically kill the candidate.",
+    "qc_guardrail": "Questionable or failed QC cannot trigger candidate kill."
+  },
+  "assumptions": [
+    "Planner outcomes normalize complex published evidence and are not necessarily the wording used in the original papers.",
+    "observed_historical denotes corresponding published experimental evidence; composite_historical combines multiple historical findings into one planner-level experiment.",
+    "The replay is decision-oriented, not an exact chronological recreation.",
+    "Cost/time values are normalized hackathon assumptions."
+  ]
+}
