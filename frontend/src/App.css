@@ -223,6 +223,62 @@
   line-height: 1.45;
 }
 
+.result-form,
+.update-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.result-form h3,
+.update-panel h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 16px;
+}
+
+.result-form label {
+  display: grid;
+  gap: 6px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.result-form select,
+.result-form button {
+  border: 1px solid #d8dde8;
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #111827;
+  background: #ffffff;
+}
+
+.result-form button {
+  border-color: #5b6ee1;
+  color: #ffffff;
+  background: #5b6ee1;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.result-form button:disabled,
+.result-form select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.update-panel p {
+  margin: 0;
+  color: #5b6475;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .experiment-list {
   display: grid;
   gap: 10px;

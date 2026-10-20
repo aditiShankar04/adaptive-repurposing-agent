@@ -47,6 +47,14 @@ def find_experiment(experiment_id):
     return None
 
 
+def find_experiment_in_state(scenario_state, experiment_id):
+    for experiment in scenario_state["experiments"]:
+        if experiment["id"] == experiment_id:
+            return experiment
+
+    return None
+
+
 def find_downstream_descendants(node_id, visited=None):
     if visited is None:
         visited = set()
@@ -296,10 +304,16 @@ def score_experiment_in_state(scenario_state, experiment):
     }
 
 
-def rank_experiments_in_state(scenario_state):
+def rank_experiments_in_state(scenario_state, completed_experiment_ids=None):
+    if completed_experiment_ids is None:
+        completed_experiment_ids = set()
+
     experiment_scores = []
 
     for experiment in scenario_state["experiments"]:
+        if experiment["id"] in completed_experiment_ids:
+            continue
+
         if (
             is_experiment_eligible_in_state(scenario_state, experiment)
             and can_experiment_contribute_to_final_decision_in_state(
@@ -314,6 +328,28 @@ def rank_experiments_in_state(scenario_state):
         key=lambda experiment_score: experiment_score["score"],
         reverse=True,
     )
+
+
+def prioritize_pending_repeat_in_state(ranked_experiments, pending_repeat_experiment_id):
+    if pending_repeat_experiment_id is None:
+        return ranked_experiments
+
+    pending_repeat_scores = [
+        experiment_score
+        for experiment_score in ranked_experiments
+        if experiment_score["experiment"]["id"] == pending_repeat_experiment_id
+    ]
+
+    if not pending_repeat_scores:
+        return ranked_experiments
+
+    other_scores = [
+        experiment_score
+        for experiment_score in ranked_experiments
+        if experiment_score["experiment"]["id"] != pending_repeat_experiment_id
+    ]
+
+    return pending_repeat_scores + other_scores
 
 
 def record_hypothetical_note(scenario_state, note):
@@ -1223,13 +1259,16 @@ def print_qc_update_details(update_details):
         print(update_details["final_decision"])
 
 
-def update_node_from_result(experiment_id, result, qc="pass", result_history=None):
-    experiment = find_experiment(experiment_id)
+def update_node_from_result_in_state(scenario_state, experiment_id, result, qc="pass", result_history=None):
+    if result not in ["positive", "negative", "inconclusive"]:
+        raise ValueError("Result must be positive, negative, or inconclusive")
+
+    experiment = find_experiment_in_state(scenario_state, experiment_id)
 
     if experiment is None:
         raise ValueError("Unknown experiment_id: " + experiment_id)
 
-    node = find_node(experiment["tests_node"])
+    node = find_node_in_state(scenario_state, experiment["tests_node"])
 
     if node is None:
         raise ValueError("Experiment tests unknown node: " + experiment["tests_node"])
@@ -1245,10 +1284,10 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
     )
 
     if normalized_qc in ["questionable", "fail"]:
-        return experiment, node_before_update, node, update_details
+        return experiment, node_before_update, node.copy(), update_details
 
     if result == "inconclusive" and experiment.get("inconclusive_action") == "repeat":
-        return experiment, node_before_update, node, update_details
+        return experiment, node_before_update, node.copy(), update_details
 
     negative_action = experiment.get("negative_action")
     inconclusive_action = experiment.get("inconclusive_action")
@@ -1262,12 +1301,12 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
         else:
             mark_scoped_kill(update_details, experiment)
 
-        return experiment, node_before_update, node, update_details
+        return experiment, node_before_update, node.copy(), update_details
 
     if result == "negative" and negative_action == "reprioritize":
         node["confidence"] = max(node["confidence"] - 0.2, 0)
         mark_reprioritize(update_details, experiment)
-        return experiment, node_before_update, node, update_details
+        return experiment, node_before_update, node.copy(), update_details
 
     if (
         result == "negative"
@@ -1277,30 +1316,30 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
         and inconclusive_action == "more_evidence"
     ):
         mark_more_evidence(update_details)
-        return experiment, node_before_update, node, update_details
+        return experiment, node_before_update, node.copy(), update_details
 
     if result == "negative" and negative_action in ["repeat_or_prune", "repeat_or_kill"]:
         if not has_confirmed_negative_result(result_history, experiment_id):
             mark_confirmation_required(update_details, experiment)
-            return experiment, node_before_update, node, update_details
+            return experiment, node_before_update, node.copy(), update_details
 
         if negative_action == "repeat_or_prune":
             node["confidence"] = max(node["confidence"] - 0.5, 0)
             node["status"] = "contradicted"
             mark_confirmed_failure(update_details, experiment, "prune")
-            return experiment, node_before_update, node, update_details
+            return experiment, node_before_update, node.copy(), update_details
 
         if experiment.get("negative_scope") == "candidate":
             node["confidence"] = max(node["confidence"] - 0.5, 0)
             node["status"] = "contradicted"
             mark_candidate_kill(update_details, experiment, confirmed=True)
-            return experiment, node_before_update, node, update_details
+            return experiment, node_before_update, node.copy(), update_details
 
         mark_confirmation_required(update_details, experiment)
         update_details["reason"] = (
             "Confirmed repeat_or_kill behavior for non-candidate scope is not implemented yet."
         )
-        return experiment, node_before_update, node, update_details
+        return experiment, node_before_update, node.copy(), update_details
 
     if result == "positive":
         node["confidence"] = min(node["confidence"] + 0.5, 1)
@@ -1313,7 +1352,17 @@ def update_node_from_result(experiment_id, result, qc="pass", result_history=Non
     else:
         raise ValueError("Result must be positive, negative, or inconclusive")
 
-    return experiment, node_before_update, node, update_details
+    return experiment, node_before_update, node.copy(), update_details
+
+
+def update_node_from_result(experiment_id, result, qc="pass", result_history=None):
+    return update_node_from_result_in_state(
+        scenario,
+        experiment_id,
+        result,
+        qc,
+        result_history,
+    )
 
 
 def rank_experiments(completed_experiment_ids=None):
@@ -1603,8 +1652,28 @@ def serialize_experiment_score(experiment_score, rank):
     }
 
 
-def get_planner_state(scenario_state, scenario_key=None):
-    ranked_experiments = rank_experiments_in_state(scenario_state)
+def get_planner_state(
+    scenario_state,
+    scenario_key=None,
+    completed_experiment_ids=None,
+    pending_repeat_experiment_id=None,
+    terminated=False,
+    final_decision=None,
+):
+    if completed_experiment_ids is None:
+        completed_experiment_ids = set()
+
+    if terminated:
+        ranked_experiments = []
+    else:
+        ranked_experiments = rank_experiments_in_state(
+            scenario_state,
+            completed_experiment_ids,
+        )
+        ranked_experiments = prioritize_pending_repeat_in_state(
+            ranked_experiments,
+            pending_repeat_experiment_id,
+        )
     serialized_ranked_experiments = [
         serialize_experiment_score(experiment_score, rank)
         for rank, experiment_score in enumerate(ranked_experiments, start=1)
@@ -1641,7 +1710,10 @@ def get_planner_state(scenario_state, scenario_key=None):
                 }
             )
 
-    if recommendation is None and unreachable_dependencies:
+    if terminated:
+        planner_status = "terminated"
+        planner_message = "Session is terminated."
+    elif recommendation is None and unreachable_dependencies:
         planner_status = "dead_end_more_evidence"
         planner_message = "No useful experiments remain and at least one final-decision dependency is unreachable."
     elif recommendation is None:
@@ -1669,7 +1741,83 @@ def get_planner_state(scenario_state, scenario_key=None):
             "message": planner_message,
             "final_decisions": final_decisions,
             "unreachable_dependencies": unreachable_dependencies,
+            "terminated": terminated,
+            "final_decision": final_decision,
+            "pending_repeat_experiment_id": pending_repeat_experiment_id,
+            "completed_experiment_ids": sorted(completed_experiment_ids),
         },
+    }
+
+
+def create_session_state(scenario_key, scenario_state):
+    return {
+        "scenario_key": scenario_key,
+        "scenario_state": scenario_state,
+        "result_history": {},
+        "completed_experiment_ids": set(),
+        "pending_repeat_experiment_id": None,
+        "terminated": False,
+        "final_decision": None,
+    }
+
+
+def get_session_planner_state(session_state):
+    return get_planner_state(
+        session_state["scenario_state"],
+        session_state.get("scenario_key"),
+        completed_experiment_ids=session_state["completed_experiment_ids"],
+        pending_repeat_experiment_id=session_state["pending_repeat_experiment_id"],
+        terminated=session_state["terminated"],
+        final_decision=session_state["final_decision"],
+    )
+
+
+def serialize_session_status(session_state):
+    return {
+        "scenario_key": session_state["scenario_key"],
+        "terminated": session_state["terminated"],
+        "final_decision": session_state["final_decision"],
+        "pending_repeat_experiment_id": session_state["pending_repeat_experiment_id"],
+        "completed_experiment_ids": sorted(session_state["completed_experiment_ids"]),
+    }
+
+
+def apply_experiment_result(session_state, experiment_id, result, qc):
+    if session_state["terminated"]:
+        raise ValueError("Session is terminated")
+
+    experiment, node_before_update, node_after_update, update_details = update_node_from_result_in_state(
+        session_state["scenario_state"],
+        experiment_id,
+        result,
+        qc,
+        session_state["result_history"],
+    )
+
+    if update_details["repeat_required"]:
+        session_state["pending_repeat_experiment_id"] = experiment["id"]
+    elif session_state["pending_repeat_experiment_id"] == experiment["id"]:
+        session_state["pending_repeat_experiment_id"] = None
+
+    if update_details["experiment_completed"]:
+        session_state["completed_experiment_ids"].add(experiment["id"])
+
+    if update_details["terminate_session"]:
+        session_state["terminated"] = True
+        session_state["final_decision"] = update_details["final_decision"]
+
+    return {
+        "submitted_result": {
+            "experiment_id": experiment_id,
+            "result": result,
+            "qc": normalize_qc(qc),
+        },
+        "experiment": experiment,
+        "node_before_update": node_before_update,
+        "node_after_update": node_after_update,
+        "update_details": update_details,
+        "session": serialize_session_status(session_state),
+        "planner_state": get_session_planner_state(session_state),
     }
 
 
@@ -1682,17 +1830,15 @@ def print_node_state(node):
 
 def run_interactive_session():
     round_number = 1
-    result_history = {}
-    pending_repeat_experiment_id = None
-    completed_experiment_ids = set()
+    session_state = create_session_state(None, scenario)
 
     while True:
         print("\n===== ROUND", str(round_number), "=====")
         print_node_uncertainties()
-        ranked_experiments = rank_experiments(completed_experiment_ids)
+        ranked_experiments = rank_experiments(session_state["completed_experiment_ids"])
         ranked_experiments = prioritize_pending_repeat(
             ranked_experiments,
-            pending_repeat_experiment_id,
+            session_state["pending_repeat_experiment_id"],
         )
         print_rankings(ranked_experiments)
         recommended = print_recommendation(ranked_experiments)
@@ -1738,12 +1884,16 @@ def run_interactive_session():
             print("QC must be pass, questionable, fail, or blank for pass.")
             continue
 
-        experiment, node_before_update, node_after_update, update_details = update_node_from_result(
+        transition = apply_experiment_result(
+            session_state,
             recommended_experiment["id"],
             result,
             qc,
-            result_history,
         )
+        experiment = transition["experiment"]
+        node_before_update = transition["node_before_update"]
+        node_after_update = transition["node_after_update"]
+        update_details = transition["update_details"]
 
         print("\nSUBMITTED RESULT")
         print("Experiment:", experiment["name"])
@@ -1756,23 +1906,15 @@ def run_interactive_session():
         print("\nNODE AFTER UPDATE")
         print_node_state(node_after_update)
 
-        if update_details["repeat_required"]:
-            pending_repeat_experiment_id = experiment["id"]
-        elif pending_repeat_experiment_id == experiment["id"]:
-            pending_repeat_experiment_id = None
-
-        if update_details["experiment_completed"]:
-            completed_experiment_ids.add(experiment["id"])
-
         if update_details["terminate_session"]:
             print("Ending session because a confirmed candidate-level failure was reached.")
             break
 
         print("\nRecalculating with updated in-memory state...")
-        updated_ranked_experiments = rank_experiments(completed_experiment_ids)
+        updated_ranked_experiments = rank_experiments(session_state["completed_experiment_ids"])
         updated_ranked_experiments = prioritize_pending_repeat(
             updated_ranked_experiments,
-            pending_repeat_experiment_id,
+            session_state["pending_repeat_experiment_id"],
         )
         print_rankings(updated_ranked_experiments, "Updated ranked experiment scores")
         print_recommendation(updated_ranked_experiments, "UPDATED RECOMMENDED NEXT EXPERIMENT")

@@ -63,20 +63,31 @@ function createGraphEdges(scientificNodes) {
 
 function App() {
   const [selectedScenario, setSelectedScenario] = useState('propranolol')
+  const [sessionId, setSessionId] = useState(null)
   const [plannerState, setPlannerState] = useState(null)
   const [selectedNodeId, setSelectedNodeId] = useState(null)
+  const [selectedResult, setSelectedResult] = useState('positive')
+  const [selectedQc, setSelectedQc] = useState('pass')
+  const [lastUpdate, setLastUpdate] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     let ignore = false
 
-    async function fetchPlannerState() {
+    async function createSession() {
       setLoading(true)
       setError(null)
+      setLastUpdate(null)
+      setSessionId(null)
 
       try {
-        const response = await fetch(`/api/planner?scenario=${selectedScenario}`)
+        const response = await fetch('/api/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario: selectedScenario }),
+        })
 
         if (!response.ok) {
           throw new Error(`Planner API returned ${response.status}`)
@@ -85,8 +96,9 @@ function App() {
         const data = await response.json()
 
         if (!ignore) {
-          setPlannerState(data)
-          setSelectedNodeId(data.scenario.nodes[0]?.id ?? null)
+          setSessionId(data.session_id)
+          setPlannerState(data.planner_state)
+          setSelectedNodeId(data.planner_state.scenario.nodes[0]?.id ?? null)
         }
       } catch (fetchError) {
         if (!ignore) {
@@ -101,7 +113,7 @@ function App() {
       }
     }
 
-    fetchPlannerState()
+    createSession()
 
     return () => {
       ignore = true
@@ -134,6 +146,44 @@ function App() {
   function handleNodeClick(_, flowNode) {
     setSelectedNodeId(flowNode.id)
   }
+
+  async function handleSubmitResult(event) {
+    event.preventDefault()
+
+    if (!sessionId || !topRankedExperiment) {
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          experiment_id: topRankedExperiment.experiment.id,
+          result: selectedResult,
+          qc: selectedQc,
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error ?? `Planner API returned ${response.status}`)
+      }
+
+      setPlannerState(data.planner_state)
+      setLastUpdate(data)
+      setSelectedNodeId(data.node_after_update?.id ?? data.planner_state.scenario.nodes[0]?.id ?? null)
+    } catch (submitError) {
+      setError(submitError.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const sessionTerminated = plannerState.planner.terminated
 
   return (
     <main className="app-shell">
@@ -223,10 +273,66 @@ function App() {
                   {formatDecimal(topRankedExperiment.metrics.discriminating_power)} at cost {topRankedExperiment.metrics.cost} and time{' '}
                   {topRankedExperiment.metrics.time}.
                 </p>
+
+                <form className="result-form" onSubmit={handleSubmitResult}>
+                  <h3>Submit Result</h3>
+                  <label>
+                    <span>Result</span>
+                    <select
+                      value={selectedResult}
+                      onChange={(event) => setSelectedResult(event.target.value)}
+                      disabled={sessionTerminated || submitting}
+                    >
+                      <option value="positive">Positive</option>
+                      <option value="negative">Negative</option>
+                      <option value="inconclusive">Inconclusive</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>QC</span>
+                    <select
+                      value={selectedQc}
+                      onChange={(event) => setSelectedQc(event.target.value)}
+                      disabled={sessionTerminated || submitting}
+                    >
+                      <option value="pass">Pass</option>
+                      <option value="questionable">Questionable</option>
+                      <option value="fail">Fail</option>
+                    </select>
+                  </label>
+                  <button type="submit" disabled={sessionTerminated || submitting}>
+                    {submitting ? 'Submitting...' : 'Submit Result'}
+                  </button>
+                </form>
               </>
             ) : (
               <p className="muted">{plannerState.planner.message ?? 'No useful experiment is currently available.'}</p>
             )}
+
+            {lastUpdate ? (
+              <section className="update-panel">
+                <p className="eyebrow">Last Update</p>
+                <h3>{lastUpdate.experiment.name}</h3>
+                <p>Result: <strong>{lastUpdate.submitted_result.result}</strong> | QC: <strong>{lastUpdate.submitted_result.qc}</strong></p>
+                <p>{lastUpdate.update_details.reason}</p>
+                {lastUpdate.update_details.recommended_action ? (
+                  <p><strong>{lastUpdate.update_details.recommended_action}</strong></p>
+                ) : null}
+                {lastUpdate.update_details.action ? (
+                  <p><strong>ACTION: {lastUpdate.update_details.action}</strong></p>
+                ) : null}
+                {lastUpdate.update_details.confirmed_failure ? (
+                  <p><strong>CONFIRMED FAILURE: {lastUpdate.update_details.confirmed_action}</strong></p>
+                ) : null}
+                {lastUpdate.update_details.final_decision ? (
+                  <p><strong>FINAL DECISION: {lastUpdate.update_details.final_decision}</strong></p>
+                ) : null}
+              </section>
+            ) : null}
+
+            {sessionTerminated ? (
+              <p className="reason"><strong>Session terminated:</strong> {plannerState.planner.final_decision}</p>
+            ) : null}
           </section>
 
           <section className="detail-panel">
