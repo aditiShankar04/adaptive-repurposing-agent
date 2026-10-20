@@ -236,7 +236,8 @@
 }
 
 .result-form,
-.update-panel {
+.update-panel,
+.final-decision-panel {
   display: grid;
   gap: 12px;
   margin-top: 18px;
@@ -245,11 +246,27 @@
   background: #ffffff;
 }
 
+.final-decision-panel {
+  border: 1px solid #31b66f;
+  background: #ecfdf3;
+}
+
 .result-form h3,
-.update-panel h3 {
+.update-panel h3,
+.final-decision-panel h2 {
   margin: 0;
   color: #111827;
   font-size: 16px;
+}
+
+.final-decision-panel p,
+.final-decision-panel ul {
+  margin: 0;
+  color: #283046;
+}
+
+.final-decision-panel ul {
+  padding-left: 18px;
 }
 
 .result-form label {
