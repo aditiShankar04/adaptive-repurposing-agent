@@ -1220,8 +1220,12 @@ def mark_reprioritize(update_details, experiment):
 
 def mark_more_evidence(update_details):
     update_details["state_updated"] = False
+    update_details["experiment_completed"] = True
     update_details["action"] = "MORE EVIDENCE"
-    update_details["reason"] = "The current result is not sufficient for a decisive update."
+    update_details["reason"] = (
+        "The current result is not sufficient for a decisive node update. "
+        "This experiment is complete, so the planner will shift to other evidence."
+    )
 
 
 def print_qc_update_details(update_details):
