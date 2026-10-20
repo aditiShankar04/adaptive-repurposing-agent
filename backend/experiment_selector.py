@@ -1766,6 +1766,18 @@ def get_planner_state(
         evaluate_final_decision_in_state(scenario_state, node)
         for node in final_decision_nodes
     ]
+    final_decision_details = None
+
+    for evaluated_final_decision in final_decisions:
+        if evaluated_final_decision["decision"] == "GO":
+            final_decision_details = evaluated_final_decision
+            break
+
+    resolved_final_decision = final_decision
+
+    if final_decision_details is not None:
+        resolved_final_decision = final_decision_details["decision"]
+
     unreachable_dependencies = []
 
     for final_decision_node in final_decision_nodes:
@@ -1786,6 +1798,9 @@ def get_planner_state(
     if terminated:
         planner_status = "terminated"
         planner_message = "Session is terminated."
+    elif recommendation is None and final_decision_details is not None:
+        planner_status = "final_decision_reached"
+        planner_message = "Final decision reached."
     elif recommendation is None and unreachable_dependencies:
         planner_status = "dead_end_more_evidence"
         planner_message = "No useful experiments remain and at least one final-decision dependency is unreachable."
@@ -1813,9 +1828,10 @@ def get_planner_state(
             "status": planner_status,
             "message": planner_message,
             "final_decisions": final_decisions,
+            "final_decision_details": final_decision_details,
             "unreachable_dependencies": unreachable_dependencies,
             "terminated": terminated,
-            "final_decision": final_decision,
+            "final_decision": resolved_final_decision,
             "pending_repeat_experiment_id": pending_repeat_experiment_id,
             "completed_experiment_ids": sorted(completed_experiment_ids),
         },

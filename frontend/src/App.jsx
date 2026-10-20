@@ -220,6 +220,9 @@ function App() {
   const displayedUpdate = lastUpdate?.transition ?? lastUpdate
   const historicalEvidence = lastUpdate?.historical_evidence
   const newRecommendation = plannerState.ranked_experiments[0]
+  const finalDecisionDetails = plannerState.planner.final_decision_details
+    ?? plannerState.planner.final_decisions?.find((finalDecision) => finalDecision.decision === 'GO')
+  const activeRestrictions = scenario.nodes.filter((node) => node.restriction_active)
 
   return (
     <main className="app-shell">
@@ -266,6 +269,24 @@ function App() {
         <aside className="side-panel">
           <section className="recommendation-panel">
             <p className="eyebrow">Next Best Experiment</p>
+            {finalDecisionDetails ? (
+              <section className="final-decision-panel">
+                <p className="eyebrow">Final Decision</p>
+                <h2>{finalDecisionDetails.node_name}: {finalDecisionDetails.decision}</h2>
+                {activeRestrictions.length ? (
+                  <p><strong>Restrictions apply</strong> to regimen, population, or monitoring.</p>
+                ) : null}
+                <p>{finalDecisionDetails.reason}</p>
+                {finalDecisionDetails.dependencies?.length ? (
+                  <ul>
+                    {finalDecisionDetails.dependencies.map((dependency) => (
+                      <li key={dependency.id}>{dependency.name}: <strong>{dependency.status}</strong></li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            ) : null}
+
             {topRankedExperiment ? (
               <>
                 <h2>{topRankedExperiment.experiment.name}</h2>
@@ -355,7 +376,9 @@ function App() {
                 )}
               </>
             ) : (
-              <p className="muted">{plannerState.planner.message ?? 'No useful experiment is currently available.'}</p>
+              !finalDecisionDetails ? (
+                <p className="muted">{plannerState.planner.message ?? 'No useful experiment is currently available.'}</p>
+              ) : null
             )}
 
             {displayedUpdate ? (
