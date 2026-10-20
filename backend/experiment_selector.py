@@ -70,6 +70,15 @@ def calculate_downstream_impact(node):
     return max(len(downstream_descendants), 1)
 
 
+def calculate_downstream_impact_in_state(scenario_state, node):
+    downstream_descendants = find_downstream_descendants_in_state(
+        scenario_state,
+        node["id"],
+    )
+
+    return max(len(downstream_descendants), 1)
+
+
 def find_node_in_state(scenario_state, node_id):
     for node in scenario_state["nodes"]:
         if node["id"] == node_id:
@@ -252,6 +261,59 @@ def can_experiment_contribute_to_final_decision_in_state(scenario_state, experim
             return True
 
     return False
+
+
+def score_experiment_in_state(scenario_state, experiment):
+    node = find_node_in_state(scenario_state, experiment["tests_node"])
+    uncertainty = calculate_uncertainty(node)
+    downstream_impact = calculate_downstream_impact_in_state(scenario_state, node)
+    impact_details = calculate_marginal_decision_impact_in_state(
+        scenario_state,
+        experiment,
+    )
+    marginal_decision_impact = impact_details["marginal_decision_impact"]
+    discriminating_power = experiment["discriminating_power"]
+    cost = experiment["cost"]
+    time = experiment["time"]
+    score = (
+        uncertainty
+        * marginal_decision_impact
+        * discriminating_power
+        / (cost * time)
+    )
+
+    return {
+        "experiment": experiment,
+        "node": node,
+        "uncertainty": uncertainty,
+        "downstream_impact": downstream_impact,
+        "marginal_decision_impact": marginal_decision_impact,
+        "impact_details": impact_details,
+        "discriminating_power": discriminating_power,
+        "cost": cost,
+        "time": time,
+        "score": score,
+    }
+
+
+def rank_experiments_in_state(scenario_state):
+    experiment_scores = []
+
+    for experiment in scenario_state["experiments"]:
+        if (
+            is_experiment_eligible_in_state(scenario_state, experiment)
+            and can_experiment_contribute_to_final_decision_in_state(
+                scenario_state,
+                experiment,
+            )
+        ):
+            experiment_scores.append(score_experiment_in_state(scenario_state, experiment))
+
+    return sorted(
+        experiment_scores,
+        key=lambda experiment_score: experiment_score["score"],
+        reverse=True,
+    )
 
 
 def record_hypothetical_note(scenario_state, note):
@@ -438,11 +500,35 @@ def get_experiment_names_by_id(experiment_ids):
     return names
 
 
+def get_experiment_names_by_id_in_state(scenario_state, experiment_ids):
+    names = []
+
+    for experiment_id in sorted(experiment_ids):
+        for experiment in scenario_state["experiments"]:
+            if experiment["id"] == experiment_id:
+                names.append(experiment["name"])
+                break
+
+    return names
+
+
 def get_node_names_by_id(node_ids):
     names = []
 
     for node_id in sorted(node_ids):
         node = find_node(node_id)
+
+        if node is not None:
+            names.append(node["name"])
+
+    return names
+
+
+def get_node_names_by_id_in_state(scenario_state, node_ids):
+    names = []
+
+    for node_id in sorted(node_ids):
+        node = find_node_in_state(scenario_state, node_id)
 
         if node is not None:
             names.append(node["name"])
@@ -504,6 +590,63 @@ def compare_program_states(positive_summary, negative_summary):
     }
 
 
+def compare_program_states_in_state(scenario_state, positive_summary, negative_summary):
+    node_difference = calculate_boolean_map_difference(
+        positive_summary["node_reachability"],
+        negative_summary["node_reachability"],
+    )
+    useful_experiment_difference = calculate_set_difference(
+        positive_summary["useful_experiment_ids"],
+        negative_summary["useful_experiment_ids"],
+    )
+    final_decision_difference = calculate_boolean_map_difference(
+        positive_summary["final_decision_reachability"],
+        negative_summary["final_decision_reachability"],
+    )
+    marginal_decision_impact = (
+        node_difference
+        + useful_experiment_difference
+        + final_decision_difference
+    ) / 3
+    changed_node_ids = {
+        node_id
+        for node_id in positive_summary["node_reachability"]
+        if (
+            positive_summary["node_reachability"].get(node_id)
+            != negative_summary["node_reachability"].get(node_id)
+        )
+    }
+
+    return {
+        "marginal_decision_impact": marginal_decision_impact,
+        "node_difference": node_difference,
+        "useful_experiment_difference": useful_experiment_difference,
+        "final_decision_difference": final_decision_difference,
+        "changed_node_names": get_node_names_by_id_in_state(scenario_state, changed_node_ids),
+        "positive_only_experiment_names": get_experiment_names_by_id_in_state(
+            scenario_state,
+            positive_summary["useful_experiment_ids"]
+            - negative_summary["useful_experiment_ids"]
+        ),
+        "negative_only_experiment_names": get_experiment_names_by_id_in_state(
+            scenario_state,
+            negative_summary["useful_experiment_ids"]
+            - positive_summary["useful_experiment_ids"]
+        ),
+        "positive_restriction_node_names": get_node_names_by_id_in_state(
+            scenario_state,
+            positive_summary["restricted_node_ids"]
+        ),
+        "negative_restriction_node_names": get_node_names_by_id_in_state(
+            scenario_state,
+            negative_summary["restricted_node_ids"]
+        ),
+        "positive_unimplemented_actions": positive_summary["unimplemented_actions"],
+        "negative_unimplemented_actions": negative_summary["unimplemented_actions"],
+        "positive_restriction_notes": positive_summary["restriction_notes"],
+        "negative_restriction_notes": negative_summary["restriction_notes"],
+    }
+
 def calculate_marginal_decision_impact(experiment):
     positive_scenario = deepcopy(scenario)
     negative_scenario = deepcopy(scenario)
@@ -515,6 +658,23 @@ def calculate_marginal_decision_impact(experiment):
     negative_summary = summarize_program_state(negative_scenario)
 
     return compare_program_states(positive_summary, negative_summary)
+
+
+def calculate_marginal_decision_impact_in_state(scenario_state, experiment):
+    positive_scenario = deepcopy(scenario_state)
+    negative_scenario = deepcopy(scenario_state)
+
+    apply_hypothetical_result(positive_scenario, experiment, "positive")
+    apply_hypothetical_result(negative_scenario, experiment, "negative")
+
+    positive_summary = summarize_program_state(positive_scenario)
+    negative_summary = summarize_program_state(negative_scenario)
+
+    return compare_program_states_in_state(
+        scenario_state,
+        positive_summary,
+        negative_summary,
+    )
 
 
 def score_experiment(experiment):
@@ -1365,6 +1525,152 @@ def print_current_state():
     ranked_experiments = rank_experiments()
     print_rankings(ranked_experiments)
     print_recommendation(ranked_experiments)
+
+
+def evaluate_final_decision_in_state(scenario_state, node):
+    dependency_logic = get_dependency_logic_for_node(node)
+    prerequisite_nodes = get_prerequisite_nodes_in_state(scenario_state, node)
+
+    if dependency_logic == "none":
+        decision = "GO"
+        reason = "No prerequisite gates are required."
+    elif dependency_logic == "all" and all(
+        prerequisite_node["status"] == "supported"
+        for prerequisite_node in prerequisite_nodes
+    ):
+        decision = "GO"
+        reason = "All required candidate-level gates are supported."
+    elif dependency_logic == "any" and any(
+        prerequisite_node["status"] == "supported"
+        for prerequisite_node in prerequisite_nodes
+    ):
+        decision = "GO"
+        reason = "At least one required path is supported."
+    else:
+        decision = "MORE EVIDENCE"
+        reason = "One or more required dependencies still need more evidence."
+
+    return {
+        "node_id": node["id"],
+        "node_name": node["name"],
+        "decision": decision,
+        "reason": reason,
+        "dependencies": [
+            {
+                "id": prerequisite_node["id"],
+                "name": prerequisite_node["name"],
+                "status": prerequisite_node["status"],
+            }
+            for prerequisite_node in prerequisite_nodes
+        ],
+    }
+
+
+def get_unreachable_final_decision_dependencies_in_state(scenario_state, final_decision_node):
+    return [
+        prerequisite_node
+        for prerequisite_node in get_prerequisite_nodes_in_state(
+            scenario_state,
+            final_decision_node,
+        )
+        if not is_node_potentially_satisfiable_in_state(scenario_state, prerequisite_node)
+    ]
+
+
+def serialize_experiment_score(experiment_score, rank):
+    experiment = experiment_score["experiment"]
+    node = experiment_score["node"]
+
+    return {
+        "rank": rank,
+        "experiment": experiment,
+        "node": {
+            "id": node["id"],
+            "name": node["name"],
+            "status": node["status"],
+            "confidence": node["confidence"],
+        },
+        "metrics": {
+            "uncertainty": experiment_score["uncertainty"],
+            "downstream_impact": experiment_score["downstream_impact"],
+            "marginal_decision_impact": experiment_score["marginal_decision_impact"],
+            "discriminating_power": experiment_score["discriminating_power"],
+            "cost": experiment_score["cost"],
+            "time": experiment_score["time"],
+            "score": experiment_score["score"],
+        },
+        "impact_details": experiment_score["impact_details"],
+    }
+
+
+def get_planner_state(scenario_state, scenario_key=None):
+    ranked_experiments = rank_experiments_in_state(scenario_state)
+    serialized_ranked_experiments = [
+        serialize_experiment_score(experiment_score, rank)
+        for rank, experiment_score in enumerate(ranked_experiments, start=1)
+    ]
+    recommendation = None
+
+    if serialized_ranked_experiments:
+        top_experiment = serialized_ranked_experiments[0]
+        recommendation = {
+            "rank": top_experiment["rank"],
+            "experiment_id": top_experiment["experiment"]["id"],
+            "node_id": top_experiment["node"]["id"],
+        }
+
+    final_decision_nodes = get_final_decision_nodes_in_state(scenario_state)
+    final_decisions = [
+        evaluate_final_decision_in_state(scenario_state, node)
+        for node in final_decision_nodes
+    ]
+    unreachable_dependencies = []
+
+    for final_decision_node in final_decision_nodes:
+        for dependency in get_unreachable_final_decision_dependencies_in_state(
+            scenario_state,
+            final_decision_node,
+        ):
+            unreachable_dependencies.append(
+                {
+                    "final_decision_node_id": final_decision_node["id"],
+                    "final_decision_node_name": final_decision_node["name"],
+                    "dependency_id": dependency["id"],
+                    "dependency_name": dependency["name"],
+                    "dependency_status": dependency["status"],
+                }
+            )
+
+    if recommendation is None and unreachable_dependencies:
+        planner_status = "dead_end_more_evidence"
+        planner_message = "No useful experiments remain and at least one final-decision dependency is unreachable."
+    elif recommendation is None:
+        planner_status = "no_useful_experiments"
+        planner_message = "No useful experiments remain."
+    else:
+        planner_status = "ok"
+        planner_message = None
+
+    return {
+        "scenario": {
+            "key": scenario_key,
+            "id": scenario_state.get("scenario_id"),
+            "type": scenario_state.get("scenario_type"),
+            "drug": scenario_state["drug"],
+            "disease": scenario_state["disease"],
+            "goal": scenario_state.get("goal"),
+            "nodes": scenario_state["nodes"],
+            "experiments": scenario_state["experiments"],
+        },
+        "ranked_experiments": serialized_ranked_experiments,
+        "recommendation": recommendation,
+        "planner": {
+            "status": planner_status,
+            "message": planner_message,
+            "final_decisions": final_decisions,
+            "unreachable_dependencies": unreachable_dependencies,
+        },
+    }
 
 
 def print_node_state(node):

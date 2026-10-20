@@ -40,6 +40,30 @@
   gap: 8px;
 }
 
+.header-controls {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+.header-controls label {
+  display: grid;
+  gap: 6px;
+  color: #5b6475;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.header-controls select {
+  min-width: 180px;
+  border: 1px solid #d8dde8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #111827;
+  background: #ffffff;
+}
+
 .legend-item,
 .status-pill {
   border-radius: 999px;
@@ -295,6 +319,10 @@
 
   .legend {
     justify-content: flex-start;
+  }
+
+  .header-controls {
+    justify-items: start;
   }
 
   .graph-layout {
