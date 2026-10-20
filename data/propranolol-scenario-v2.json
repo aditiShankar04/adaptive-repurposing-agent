@@ -20,6 +20,10 @@
       "depends_on": [],
       "dependency_logic": "none",
       "downstream": [
+        "beta_mechanism",
+        "apoptosis_mechanism",
+        "vegf_mechanism",
+        "beta_independent",
         "viability"
       ],
       "failure_scope": "candidate"
