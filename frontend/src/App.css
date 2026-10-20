@@ -24,6 +24,18 @@
   color: #5b6475;
 }
 
+.app-header .tagline {
+  margin: 0 0 10px;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.scenario-title {
+  margin: 0 0 6px;
+  font-weight: 800;
+}
+
 .eyebrow {
   margin: 0;
   color: #5b6ee1;

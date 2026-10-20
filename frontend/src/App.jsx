@@ -92,7 +92,7 @@ function App() {
         })
 
         if (!response.ok) {
-          throw new Error(`Planner API returned ${response.status}`)
+          throw new Error(`Labyrinth API returned ${response.status}`)
         }
 
         const data = await response.json()
@@ -123,15 +123,15 @@ function App() {
   }, [selectedScenario])
 
   if (loading) {
-    return <main className="app-shell"><p className="muted">Loading planner state...</p></main>
+    return <main className="app-shell"><p className="muted">Loading Labyrinth state...</p></main>
   }
 
   if (error) {
-    return <main className="app-shell"><p className="muted">Planner API error: {error}</p></main>
+    return <main className="app-shell"><p className="muted">Labyrinth API error: {error}</p></main>
   }
 
   if (!plannerState) {
-    return <main className="app-shell"><p className="muted">No planner state available.</p></main>
+    return <main className="app-shell"><p className="muted">No Labyrinth state available.</p></main>
   }
 
   const scenario = plannerState.scenario
@@ -172,7 +172,7 @@ function App() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error ?? `Planner API returned ${response.status}`)
+        throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
       }
 
       setPlannerState(data.planner_state)
@@ -202,7 +202,7 @@ function App() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error ?? `Planner API returned ${response.status}`)
+        throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
       }
 
       const transition = data.transition
@@ -226,8 +226,10 @@ function App() {
     <main className="app-shell">
       <header className="app-header">
         <div>
-          <p className="eyebrow">Adaptive repurposing prototype</p>
-          <h1>{scenario.drug} -&gt; {scenario.disease}</h1>
+          <p className="eyebrow">LABYRINTH</p>
+          <h1>Adaptive Experimental Navigation</h1>
+          <p className="tagline">Navigate uncertainty. Choose the experiment that matters next.</p>
+          <p className="scenario-title">{scenario.drug} -&gt; {scenario.disease}</p>
           <p>{scenario.goal}</p>
         </div>
         <div className="header-controls">
@@ -314,14 +316,15 @@ function App() {
                 {historicalReplay ? (
                   <section className="result-form">
                     <h3>Historical Evidence Replay</h3>
-                    <p className="muted">Historical evidence is revealed only after ARGUS selects the next experiment.</p>
+                    <p className="muted">Historical evidence is revealed only after Labyrinth selects the next experiment.</p>
                     <button type="button" disabled={sessionTerminated || submitting} onClick={handleRevealHistoricalEvidence}>
                       {submitting ? 'Revealing...' : 'Reveal Historical Evidence'}
                     </button>
                   </section>
                 ) : (
                   <form className="result-form" onSubmit={handleSubmitResult}>
-                    <h3>Submit Result</h3>
+                    <h3>Future Exploration</h3>
+                    <p className="muted">Explore prospective outcomes by submitting a result.</p>
                     <label>
                       <span>Result</span>
                       <select
@@ -365,7 +368,7 @@ function App() {
                     <p>Historical outcome: <strong>{historicalEvidence.historical_outcome}</strong></p>
                     <p>Evidence class: <strong>{historicalEvidence.evidence_class}</strong></p>
                     <p>{historicalEvidence.summary}</p>
-                    <p>Applied planner result: <strong>{historicalEvidence.applied_result}</strong> | QC: <strong>{historicalEvidence.qc}</strong></p>
+                    <p>Applied result: <strong>{historicalEvidence.applied_result}</strong> | QC: <strong>{historicalEvidence.qc}</strong></p>
                     {historicalEvidence.historical_action ? (
                       <p><strong>Historical action: {historicalEvidence.historical_action}</strong></p>
                     ) : null}
