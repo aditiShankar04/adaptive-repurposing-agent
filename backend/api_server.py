@@ -90,6 +90,13 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
             return
 
         path_parts = parsed_url.path.strip("/").split("/")
+        if (
+            len(path_parts) == 4
+            and path_parts[:2] == ["api", "sessions"]
+            and path_parts[3] == "explain"
+        ):
+            self.handle_session_explanation(path_parts[2])
+            return
 
         if len(path_parts) == 3 and path_parts[:2] == ["api", "sessions"]:
             self.handle_session_get(path_parts[2])
@@ -234,6 +241,34 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
             }
 
         self.send_json(200, response)
+
+    def handle_session_explanation(self, session_id):
+        with sessions_lock:
+            session_state = sessions.get(session_id)
+
+            if session_state is None:
+                self.send_json(
+                    404,
+                    {"error": "Unknown session"},
+                )
+                return
+
+            planner_state = get_session_planner_state(
+                session_state
+            )
+
+        explanation = build_llm_explanation(
+            planner_state
+        )
+
+        self.send_json(
+            200,
+            {
+                "session_id": session_id,
+                "recommendation": planner_state["recommendation"],
+                "llm_explanation": explanation,
+            },
+        )
 
     def handle_historical_reveal(self, session_id):
         with sessions_lock:
