@@ -1,28 +1,53 @@
+@font-face {
+  font-family: 'Basheq Vintage';
+  src: url('/fonts/BasheqVintage-Demo.otf') format('opentype'), url('/fonts/BasheqVintage-Demo.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #111827;
-  background: #f6f7fb;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  --page: #f5f2e9;
+  --surface: #faf8f1;
+  --surface-raised: #fbf9f3;
+  --surface-sunken: rgba(25, 22, 47, 0.05);
+  --ink: #19162f;
+  --ink-muted: #5d5a78;
+  --ink-on-dark: #19162f;
+  --ink-on-dark-muted: #5d5a78;
+  --line: rgba(25, 22, 47, 0.16);
+  --accent: #3b4fc4;
+  --accent-strong: #2b3a9e;
+  --accent-soft: rgba(59, 79, 196, 0.1);
+  --coral: #cf6a55;
+  --status-supported: #d0f0c0;
+  --status-uncertain: #ffd4a1;
+  --status-contradicted: #f09191;
+  --status-unexplored: #ebebeb;
+  --status-supported-ink: #2b6e2f;
+  --status-uncertain-ink: #a85d06;
+  --status-contradicted-ink: #9c2222;
+  --status-unexplored-ink: #5f5f66;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --font-display: 'Basheq Vintage', Georgia, 'Times New Roman', serif;
+  --font-body: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-ui: var(--font-body);
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease-out: cubic-bezier(0.22, 0.8, 0.3, 1);
+  font-family: var(--font-body);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-#root {
-  min-height: 100svh;
-}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-height: 100%; }
+body { min-width: 320px; overflow-x: hidden; background: var(--page); }
+h1, h2, h3, h4, p { margin: 0; }
+button, input, textarea, select { font: inherit; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
