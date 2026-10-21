@@ -3,6 +3,8 @@ import os
 import urllib.error
 import urllib.request
 
+from experiment_selector import PROJECT_ROOT, get_planner_state, load_scenario
+
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "qwen/qwen3.8-27b"
@@ -30,6 +32,25 @@ Do not make GO/NO-GO decisions.
 Do not fabricate sources.
 
 If the supplied context does not support a statement, do not make it.
+
+Write for a biomedical scientist who wants to understand the decision,
+not the scoring implementation.
+
+Explain the recommendation primarily in terms of:
+- what unresolved node the experiment tests,
+- why resolving that node matters to downstream decisions,
+- and why the planner preferred this experiment over the other
+  currently eligible options.
+
+You may mention numerical metrics when useful, but do not list or
+repeat all planner metrics.
+
+Translate the supplied planner facts into a concise explanation rather
+than restating the input fields.
+
+Do not infer biological meaning beyond the supplied context.
+
+Keep the explanation to 2-3 concise sentences.
 
 Return JSON with exactly this structure:
 {
@@ -73,15 +94,27 @@ def build_explanation_context(planner_state):
             "confidence": node["confidence"],
         },
         "planner_metrics": {
-            "uncertainty": metrics["uncertainty"],
-            "downstream_impact": metrics["downstream_impact"],
-            "marginal_decision_impact": metrics[
-                "marginal_decision_impact"
+            "uncertainty": round(
+                metrics["uncertainty"],
+                3,
+            ),
+            "downstream_impact": metrics[
+                "downstream_impact"
             ],
-            "discriminating_power": metrics["discriminating_power"],
+            "marginal_decision_impact": round(
+                metrics["marginal_decision_impact"],
+                3,
+            ),
+            "discriminating_power": round(
+                metrics["discriminating_power"],
+                3,
+            ),
             "cost": metrics["cost"],
             "time": metrics["time"],
-            "score": metrics["score"],
+            "score": round(
+                metrics["score"],
+                3,
+            ),
         },
         "planner_fact": (
             "This is the highest-ranked eligible experiment."
@@ -93,8 +126,7 @@ def deterministic_fallback(context):
     """
     Generate an explanation without an LLM.
 
-    This is used if the Groq API key is missing, Groq is unavailable,
-    Qwen times out, or the returned response is invalid.
+    Used if Groq/Qwen is unavailable or returns an invalid response.
     """
 
     experiment = context["recommended_experiment"]
@@ -135,9 +167,15 @@ def explain_recommendation(context):
     api_key = os.getenv("GROQ_API_KEY")
 
     if not api_key:
+        print("LLM ERROR: GROQ_API_KEY is not loaded.")
+        print("Using deterministic fallback.")
+
         return deterministic_fallback(context)
 
-    model = os.getenv("LLM_MODEL", DEFAULT_MODEL)
+    model = os.getenv(
+        "LLM_MODEL",
+        DEFAULT_MODEL,
+    )
 
     request_body = {
         "model": model,
@@ -150,7 +188,10 @@ def explain_recommendation(context):
                 "role": "user",
                 "content": (
                     "PLANNER CONTEXT:\n"
-                    + json.dumps(context, indent=2)
+                    + json.dumps(
+                        context,
+                        indent=2,
+                    )
                     + "\n\nExplain why the planner selected "
                     + "this experiment."
                 ),
@@ -158,18 +199,20 @@ def explain_recommendation(context):
         ],
         "temperature": 0.2,
         "max_tokens": 200,
-        "response_format": {
-            "type": "json_object"
-        },
     }
 
     request = urllib.request.Request(
         GROQ_URL,
-        data=json.dumps(request_body).encode("utf-8"),
+        data=json.dumps(
+            request_body
+        ).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+    "Authorization": (
+        f"Bearer {api_key}"
+    ),
+    "Content-Type": "application/json",
+    "User-Agent": "Labyrinth/1.0",
+},
         method="POST",
     )
 
@@ -182,22 +225,52 @@ def explain_recommendation(context):
                 response.read().decode("utf-8")
             )
 
-        content = response_data["choices"][0]["message"]["content"]
-        explanation = json.loads(content)
-
-        recommendation_explanation = explanation.get(
-            "recommendation_explanation"
+        content = (
+            response_data["choices"][0]
+            ["message"]["content"]
         )
 
-        if not isinstance(recommendation_explanation, str):
+        explanation = json.loads(content)
+
+        recommendation_explanation = (
+            explanation.get(
+                "recommendation_explanation"
+            )
+        )
+
+        if not isinstance(
+            recommendation_explanation,
+            str,
+        ):
             raise ValueError(
                 "Invalid LLM response structure"
             )
 
         return {
-            "recommendation_explanation":
+            "recommendation_explanation": (
                 recommendation_explanation
+            )
         }
+
+    except urllib.error.HTTPError as error:
+        error_body = error.read().decode(
+            "utf-8",
+            errors="replace",
+        )
+
+        print(
+            "GROQ HTTP ERROR:",
+            error.code,
+        )
+        print(
+            "GROQ ERROR BODY:",
+            error_body,
+        )
+        print(
+            "Using deterministic fallback."
+        )
+
+        return deterministic_fallback(context)
 
     except (
         urllib.error.URLError,
@@ -205,54 +278,79 @@ def explain_recommendation(context):
         KeyError,
         json.JSONDecodeError,
         ValueError,
-    ):
+    ) as error:
+        print(
+            "LLM ERROR:",
+            repr(error),
+        )
+        print(
+            "Using deterministic fallback."
+        )
+
         return deterministic_fallback(context)
 
 
 if __name__ == "__main__":
-    # Standalone test using the same nested structure that
-    # build_explanation_context() will produce from the real planner.
-
-    test_context = {
-        "scenario": {
-            "drug": "Propranolol",
-            "disease": "Infantile hemangioma",
-            "goal": (
-                "Determine whether propranolol should advance "
-                "for infantile hemangioma."
-            ),
-        },
-        "recommended_experiment": {
-            "id": "exp_enantiomer",
-            "name": (
-                "R(+) vs Racemic/S(-) Propranolol "
-                "Functional Comparison"
-            ),
-            "tests_node": "Beta-Independent Activity",
-        },
-        "tested_node_state": {
-            "status": "uncertain",
-            "confidence": 0.35,
-        },
-        "planner_metrics": {
-            "uncertainty": 0.65,
-            "downstream_impact": 4,
-            "marginal_decision_impact": 4,
-            "discriminating_power": 0.95,
-            "cost": 3,
-            "time": 1,
-            "score": 0.823,
-        },
-        "planner_fact": (
-            "This is the highest-ranked eligible experiment."
-        ),
-    }
-
-    explanation = explain_recommendation(test_context)
-
-    print(
-        json.dumps(
-            explanation,
-            indent=2,
-        )
+    # Load the real propranolol historical scenario.
+    scenario_file = (
+        PROJECT_ROOT
+        / "data"
+        / "propranolol-scenario-v2.json"
     )
+
+    scenario = load_scenario(
+        scenario_file
+    )
+
+    # Ask the real deterministic Labyrinth planner
+    # to rank the available experiments.
+    planner_state = get_planner_state(
+        scenario,
+        scenario_key="propranolol",
+    )
+
+    # Extract only the grounded information
+    # that Qwen needs.
+    context = build_explanation_context(
+        planner_state
+    )
+
+    if context is None:
+        print(
+            "No experiment is currently recommended."
+        )
+
+    else:
+        print(
+            "\nLABYRINTH RECOMMENDATION"
+        )
+        print(
+            context[
+                "recommended_experiment"
+            ]["name"]
+        )
+
+        print(
+            "\nPLANNER CONTEXT"
+        )
+        print(
+            json.dumps(
+                context,
+                indent=2,
+            )
+        )
+
+        print(
+            "\nQWEN EXPLANATION"
+        )
+
+        explanation = explain_recommendation(
+            context
+        )
+
+        print(
+            json.dumps(
+                explanation,
+                indent=2,
+            )
+        )
