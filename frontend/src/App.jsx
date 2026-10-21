@@ -1,159 +1,134 @@
-import { useEffect, useState } from 'react'
-import { ReactFlow, Background, Controls } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import './screens.css'
 
-const scenarioOptions = [
-  { value: 'propranolol', label: 'Propranolol' },
-  { value: 'xanomeline', label: 'Xanomeline' },
-  { value: 'demo', label: 'Demo' },
+import Environment from './components/Environment.jsx'
+import LandingPage from './components/LandingPage.jsx'
+import ResearchWorkspace from './components/ResearchWorkspace.jsx'
+import ScenarioSelector from './components/ScenarioSelector.jsx'
+import ScenarioValidation from './components/ScenarioValidation.jsx'
+import useReducedMotion from './hooks/useReducedMotion.js'
+import { readScenarioFile } from './scenarioValidation.js'
+
+const LEAVE_MS = 420
+const MIN_VALIDATING_MS = 400
+const ENVIRONMENT_STAGE = {
+  landing: 'landing',
+  'scenario-select': 'select',
+  validation: 'select',
+  workspace: 'workspace',
+}
+const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms) })
+
+const scenarioSamples = [
+  { key: 'propranolol', label: 'propranolol', title: 'Propranolol historical replay' },
+  { key: 'xanomeline', label: 'xanomeline', title: 'Xanomeline PDP scenario' },
+  { key: 'demo', label: 'demo', title: 'Demo scenario' },
 ]
 
-const nodePositions = {
-  mechanism: { x: 0, y: 0 },
-  target_engagement: { x: 0, y: 160 },
-  efficacy: { x: 0, y: 320 },
-  exposure: { x: 280, y: 320 },
-  clinical_signal: { x: 0, y: 0 },
-  beta_mechanism: { x: -320, y: 160 },
-  apoptosis_mechanism: { x: -160, y: 160 },
-  vegf_mechanism: { x: 160, y: 160 },
-  beta_independent: { x: 0, y: 160 },
-  sox18: { x: 320, y: 320 },
-  cellular_effect: { x: 0, y: 360 },
-  in_vivo_effect: { x: 0, y: 540 },
-  viability: { x: 0, y: 720 },
-  safety: { x: -360, y: 540 },
-}
-
-function formatConfidence(confidence) {
-  return `${Math.round(confidence * 100)}% confidence`
-}
-
-function formatDecimal(value) {
-  return Number(value).toFixed(3)
-}
-
-function createGraphNodes(scientificNodes, recommendedNodeId) {
-  return scientificNodes.map((node, index) => ({
-    id: node.id,
-    position: nodePositions[node.id] ?? { x: (index % 4) * 260, y: Math.floor(index / 4) * 170 },
-    className: `decision-node status-${node.status}${node.id === recommendedNodeId ? ' recommended-node' : ''}`,
-    data: {
-      label: (
-        <div>
-          <div className="node-status">{node.status}</div>
-          <div className="node-name">{node.name}</div>
-          <div className="node-confidence">{formatConfidence(node.confidence)}</div>
-        </div>
-      ),
-    },
-  }))
-}
-
-function createGraphEdges(scientificNodes) {
-  return scientificNodes.flatMap((node) =>
-    node.downstream.map((downstreamNodeId) => ({
-      id: `${node.id}-${downstreamNodeId}`,
-      source: node.id,
-      target: downstreamNodeId,
-      type: 'smoothstep',
-      animated: false,
-    })),
-  )
-}
-
 function App() {
-  const [selectedScenario, setSelectedScenario] = useState('propranolol')
+  const reduced = useReducedMotion()
+  const [screen, setScreen] = useState('landing')
+  const [pendingScreen, setPendingScreen] = useState(null)
+  const [sweepToken, setSweepToken] = useState(0)
+  const [introPlayed, setIntroPlayed] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [plannerState, setPlannerState] = useState(null)
-  const [selectedNodeId, setSelectedNodeId] = useState(null)
+  const [previewScenario, setPreviewScenario] = useState(null)
+  const [previewFileName, setPreviewFileName] = useState(null)
+  const [loadCount, setLoadCount] = useState(0)
+  const [upload, setUpload] = useState(null)
+  const [uploadState, setUploadState] = useState(null)
+  const [loadingKey, setLoadingKey] = useState(null)
+  const [error, setError] = useState(null)
   const [selectedResult, setSelectedResult] = useState('positive')
   const [selectedQc, setSelectedQc] = useState('pass')
   const [lastUpdate, setLastUpdate] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const timers = useRef([])
 
-  useEffect(() => {
-    let ignore = false
+  useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
-    async function createSession() {
-      setLoading(true)
-      setError(null)
-      setLastUpdate(null)
-      setSessionId(null)
+  function later(callback, ms) {
+    timers.current.push(setTimeout(callback, ms))
+  }
 
-      try {
-        const response = await fetch('/api/sessions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scenario: selectedScenario }),
-        })
-
-        if (!response.ok) {
-          throw new Error(`Labyrinth API returned ${response.status}`)
-        }
-
-        const data = await response.json()
-
-        if (!ignore) {
-          setSessionId(data.session_id)
-          setPlannerState(data.planner_state)
-          setSelectedNodeId(data.planner_state.scenario.nodes[0]?.id ?? null)
-        }
-      } catch (fetchError) {
-        if (!ignore) {
-          setError(fetchError.message)
-          setPlannerState(null)
-          setSelectedNodeId(null)
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false)
-        }
-      }
+  function go(next) {
+    if (pendingScreen) return
+    if (screen === 'landing') setIntroPlayed(true)
+    if (reduced) {
+      setScreen(next)
+      return
     }
+    setPendingScreen(next)
+    if (screen === 'landing' && next === 'scenario-select') setSweepToken((token) => token + 1)
+    later(() => {
+      setScreen(next)
+      setPendingScreen(null)
+    }, LEAVE_MS)
+  }
 
-    createSession()
+  async function createBackendSession(scenarioKey) {
+    setLoadingKey(scenarioKey)
+    setError(null)
+    setLastUpdate(null)
+    setSessionId(null)
+    setPlannerState(null)
+    setPreviewScenario(null)
+    setPreviewFileName(null)
 
-    return () => {
-      ignore = true
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario: scenarioKey }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
+
+      setSessionId(data.session_id)
+      setPlannerState(data.planner_state)
+      setLoadCount((count) => count + 1)
+      go('workspace')
+    } catch (fetchError) {
+      setError(fetchError.message)
+    } finally {
+      setLoadingKey(null)
     }
-  }, [selectedScenario])
-
-  if (loading) {
-    return <main className="app-shell"><p className="muted">Loading Labyrinth state...</p></main>
   }
 
-  if (error) {
-    return <main className="app-shell"><p className="muted">Labyrinth API error: {error}</p></main>
+  async function handleUploadFile(file) {
+    setUploadState({ fileName: file.name })
+    const [result] = await Promise.all([readScenarioFile(file), reduced ? null : wait(MIN_VALIDATING_MS)])
+    setUpload({ fileName: file.name, result })
+    setUploadState(null)
+    if (screen === 'validation') setScreen('validation')
+    else go('validation')
   }
 
-  if (!plannerState) {
-    return <main className="app-shell"><p className="muted">No Labyrinth state available.</p></main>
+  function openUploadedPreview() {
+    if (!upload?.result.ok) return
+    setSessionId(null)
+    setPlannerState(null)
+    setLastUpdate(null)
+    setError(null)
+    setPreviewScenario(upload.result.scenario)
+    setPreviewFileName(upload.fileName)
+    setLoadCount((count) => count + 1)
+    go('workspace')
   }
 
-  const scenario = plannerState.scenario
-  const topRankedExperiment = plannerState.ranked_experiments[0] ?? null 
-  const recommendedNodeId = topRankedExperiment?.node_id ?? null
-  const graphNodes = createGraphNodes(scenario.nodes, recommendedNodeId)
-  const graphEdges = createGraphEdges(scenario.nodes)
-  const selectedNode = scenario.nodes.find((node) => node.id === selectedNodeId) ?? scenario.nodes[0]
-  const selectedExperiments = scenario.experiments.filter(
-    (experiment) => experiment.tests_node === selectedNode?.id,
-  )
-
-  function handleNodeClick(_, flowNode) {
-    setSelectedNodeId(flowNode.id)
+  function goToSelector() {
+    setUpload(null)
+    setError(null)
+    go('scenario-select')
   }
 
   async function handleSubmitResult(event) {
     event.preventDefault()
-
-    if (!sessionId || !topRankedExperiment) {
-      return
-    }
+    const topRankedExperiment = plannerState?.ranked_experiments?.[0] ?? null
+    if (!sessionId || !topRankedExperiment) return
 
     setSubmitting(true)
     setError(null)
@@ -169,14 +144,9 @@ function App() {
         }),
       })
       const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
-      }
-
+      if (!response.ok) throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
       setPlannerState(data.planner_state)
       setLastUpdate(data)
-      setSelectedNodeId(data.node_after_update?.id ?? data.planner_state.scenario.nodes[0]?.id ?? null)
     } catch (submitError) {
       setError(submitError.message)
     } finally {
@@ -185,10 +155,7 @@ function App() {
   }
 
   async function handleRevealHistoricalEvidence() {
-    if (!sessionId || !topRankedExperiment) {
-      return
-    }
-
+    if (!sessionId || !plannerState?.ranked_experiments?.[0]) return
     setSubmitting(true)
     setError(null)
 
@@ -199,15 +166,9 @@ function App() {
         body: JSON.stringify({}),
       })
       const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
-      }
-
-      const transition = data.transition
+      if (!response.ok) throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
       setPlannerState(data.planner_state)
       setLastUpdate(data)
-      setSelectedNodeId(transition.node_after_update?.id ?? data.planner_state.scenario.nodes[0]?.id ?? null)
     } catch (submitError) {
       setError(submitError.message)
     } finally {
@@ -215,263 +176,66 @@ function App() {
     }
   }
 
-  const sessionTerminated = plannerState.planner.terminated
-  const historicalReplay = scenario.type === 'historical_replay'
-  const displayedUpdate = lastUpdate?.transition ?? lastUpdate
-  const historicalEvidence = lastUpdate?.historical_evidence
-  const newRecommendation = plannerState.ranked_experiments[0]
-  const finalDecisionDetails = plannerState.planner.final_decision_details
-    ?? plannerState.planner.final_decisions?.find((finalDecision) => finalDecision.decision === 'GO')
-  const activeRestrictions = scenario.nodes.filter((node) => node.restriction_active)
+  let content = null
+  if (screen === 'landing') {
+    content = <LandingPage skipIntro={introPlayed} onGetStarted={() => go('scenario-select')} />
+  } else if (screen === 'scenario-select') {
+    content = (
+      <>
+        {error && <p className="flow-error" role="alert">labyrinth api error: {error}</p>}
+        <ScenarioSelector
+          samples={scenarioSamples}
+          onSelectBuiltIn={(entry) => createBackendSession(entry.key)}
+          onUploadFile={handleUploadFile}
+          uploadState={uploadState}
+          onBack={() => go('landing')}
+          loadingKey={loadingKey}
+        />
+      </>
+    )
+  } else if (screen === 'validation' && upload) {
+    content = (
+      <ScenarioValidation
+        fileName={upload.fileName}
+        result={upload.result}
+        onEnter={openUploadedPreview}
+        onUploadFile={handleUploadFile}
+        uploadState={uploadState}
+        onBack={goToSelector}
+      />
+    )
+  } else if (screen === 'workspace' && (plannerState || previewScenario)) {
+    content = (
+      <>
+        {error && <p className="workspace-error" role="alert">labyrinth api error: {error}</p>}
+        <ResearchWorkspace
+          key={loadCount}
+          plannerState={plannerState}
+          previewScenario={previewScenario}
+          previewFileName={previewFileName}
+          onChangeScenario={goToSelector}
+          onSubmitResult={handleSubmitResult}
+          onRevealHistoricalEvidence={handleRevealHistoricalEvidence}
+          selectedResult={selectedResult}
+          selectedQc={selectedQc}
+          onResultChange={setSelectedResult}
+          onQcChange={setSelectedQc}
+          submitting={submitting}
+          lastUpdate={lastUpdate}
+        />
+      </>
+    )
+  }
+
+  const environmentStage = ENVIRONMENT_STAGE[pendingScreen ?? screen]
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">LABYRINTH</p>
-          <h1>Adaptive Experimental Navigation</h1>
-          <p className="tagline">Navigate uncertainty. Choose the experiment that matters next.</p>
-          <p className="scenario-title">{scenario.drug} -&gt; {scenario.disease}</p>
-          <p>{scenario.goal}</p>
-        </div>
-        <div className="header-controls">
-          <label>
-            <span>Scenario</span>
-            <select value={selectedScenario} onChange={(event) => setSelectedScenario(event.target.value)}>
-              {scenarioOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <div className="legend" aria-label="Node status legend">
-            <span className="legend-item supported">Supported</span>
-            <span className="legend-item uncertain">Uncertain</span>
-            <span className="legend-item contradicted">Contradicted</span>
-            <span className="legend-item unexplored">Unexplored</span>
-          </div>
-        </div>
-      </header>
-
-      <section className="graph-layout">
-        <div className="flow-panel" aria-label="Decision dependency graph">
-          <ReactFlow
-            nodes={graphNodes}
-            edges={graphEdges}
-            onNodeClick={handleNodeClick}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-          >
-            <Background />
-            <Controls />
-          </ReactFlow>
-        </div>
-
-        <aside className="side-panel">
-          <section className="recommendation-panel">
-            <p className="eyebrow">Next Best Experiment</p>
-            {finalDecisionDetails ? (
-              <section className="final-decision-panel">
-                <p className="eyebrow">Final Decision</p>
-                <h2>{finalDecisionDetails.node_name}: {finalDecisionDetails.decision}</h2>
-                {activeRestrictions.length ? (
-                  <p><strong>Restrictions apply</strong> to regimen, population, or monitoring.</p>
-                ) : null}
-                <p>{finalDecisionDetails.reason}</p>
-                {finalDecisionDetails.dependencies?.length ? (
-                  <ul>
-                    {finalDecisionDetails.dependencies.map((dependency) => (
-                      <li key={dependency.id}>{dependency.name}: <strong>{dependency.status}</strong></li>
-                    ))}
-                  </ul>
-                ) : null}
-              </section>
-            ) : null}
-
-            {topRankedExperiment ? (
-              <>
-                <h2>{topRankedExperiment.experiment.name}</h2>
-                <p className="question">
-                  Tests <strong>{topRankedExperiment.node.name}</strong>, highlighted on the graph.
-                </p>
-
-                <dl className="score-grid">
-                  <div>
-                    <dt>Uncertainty</dt>
-                    <dd>{formatDecimal(topRankedExperiment.metrics.uncertainty)}</dd>
-                  </div>
-                  <div>
-                    <dt>Downstream Impact</dt>
-                    <dd>{topRankedExperiment.metrics.downstream_impact}</dd>
-                  </div>
-                  <div>
-                    <dt>Marginal Impact</dt>
-                    <dd>{formatDecimal(topRankedExperiment.metrics.marginal_decision_impact)}</dd>
-                  </div>
-                  <div>
-                    <dt>Discriminating Power</dt>
-                    <dd>{formatDecimal(topRankedExperiment.metrics.discriminating_power)}</dd>
-                  </div>
-                  <div>
-                    <dt>Cost</dt>
-                    <dd>{topRankedExperiment.metrics.cost}</dd>
-                  </div>
-                  <div>
-                    <dt>Time</dt>
-                    <dd>{topRankedExperiment.metrics.time}</dd>
-                  </div>
-                  <div className="score-total">
-                    <dt>Final Score</dt>
-                    <dd>{formatDecimal(topRankedExperiment.metrics.score)}</dd>
-                  </div>
-                </dl>
-
-                <p className="reason">
-                  {topRankedExperiment.experiment.name} ranked highest because it tests {topRankedExperiment.node.name}
-                  {' '}with uncertainty {formatDecimal(topRankedExperiment.metrics.uncertainty)} and marginal decision impact{' '}
-                  {formatDecimal(topRankedExperiment.metrics.marginal_decision_impact)}, while having discriminating power{' '}
-                  {formatDecimal(topRankedExperiment.metrics.discriminating_power)} at cost {topRankedExperiment.metrics.cost} and time{' '}
-                  {topRankedExperiment.metrics.time}.
-                </p>
-
-                {historicalReplay ? (
-                  <section className="result-form">
-                    <h3>Historical Evidence Replay</h3>
-                    <p className="muted">Historical evidence is revealed only after Labyrinth selects the next experiment.</p>
-                    <button type="button" disabled={sessionTerminated || submitting} onClick={handleRevealHistoricalEvidence}>
-                      {submitting ? 'Revealing...' : 'Reveal Historical Evidence'}
-                    </button>
-                  </section>
-                ) : (
-                  <form className="result-form" onSubmit={handleSubmitResult}>
-                    <h3>Future Exploration</h3>
-                    <p className="muted">Explore prospective outcomes by submitting a result.</p>
-                    <label>
-                      <span>Result</span>
-                      <select
-                        value={selectedResult}
-                        onChange={(event) => setSelectedResult(event.target.value)}
-                        disabled={sessionTerminated || submitting}
-                      >
-                        <option value="positive">Positive</option>
-                        <option value="negative">Negative</option>
-                        <option value="inconclusive">Inconclusive</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>QC</span>
-                      <select
-                        value={selectedQc}
-                        onChange={(event) => setSelectedQc(event.target.value)}
-                        disabled={sessionTerminated || submitting}
-                      >
-                        <option value="pass">Pass</option>
-                        <option value="questionable">Questionable</option>
-                        <option value="fail">Fail</option>
-                      </select>
-                    </label>
-                    <button type="submit" disabled={sessionTerminated || submitting}>
-                      {submitting ? 'Submitting...' : 'Submit Result'}
-                    </button>
-                  </form>
-                )}
-              </>
-            ) : (
-              !finalDecisionDetails ? (
-                <p className="muted">{plannerState.planner.message ?? 'No useful experiment is currently available.'}</p>
-              ) : null
-            )}
-
-            {displayedUpdate ? (
-              <section className="update-panel">
-                <p className="eyebrow">{historicalEvidence ? 'Historical Evidence Replay' : 'Last Update'}</p>
-                <h3>{displayedUpdate.experiment.name}</h3>
-                {historicalEvidence ? (
-                  <>
-                    <p>Historical outcome: <strong>{historicalEvidence.historical_outcome}</strong></p>
-                    <p>Evidence class: <strong>{historicalEvidence.evidence_class}</strong></p>
-                    <p>{historicalEvidence.summary}</p>
-                    <p>Applied result: <strong>{historicalEvidence.applied_result}</strong> | QC: <strong>{historicalEvidence.qc}</strong></p>
-                    {historicalEvidence.historical_action ? (
-                      <p><strong>Historical action: {historicalEvidence.historical_action}</strong></p>
-                    ) : null}
-                    {historicalEvidence.scope ? (
-                      <p>Scope: <strong>{historicalEvidence.scope}</strong></p>
-                    ) : null}
-                  </>
-                ) : (
-                  <p>Result: <strong>{displayedUpdate.submitted_result.result}</strong> | QC: <strong>{displayedUpdate.submitted_result.qc}</strong></p>
-                )}
-                <p>{displayedUpdate.update_details.reason}</p>
-                <p>
-                  Node: <strong>{displayedUpdate.node_before_update.status}</strong> ({formatConfidence(displayedUpdate.node_before_update.confidence)})
-                  {' '}→ <strong>{displayedUpdate.node_after_update.status}</strong> ({formatConfidence(displayedUpdate.node_after_update.confidence)})
-                </p>
-                {displayedUpdate.update_details.recommended_action ? (
-                  <p><strong>{displayedUpdate.update_details.recommended_action}</strong></p>
-                ) : null}
-                {displayedUpdate.update_details.action ? (
-                  <p><strong>ACTION: {displayedUpdate.update_details.action}</strong></p>
-                ) : null}
-                {displayedUpdate.update_details.confirmed_failure ? (
-                  <p><strong>CONFIRMED FAILURE: {displayedUpdate.update_details.confirmed_action}</strong></p>
-                ) : null}
-                {displayedUpdate.update_details.final_decision ? (
-                  <p><strong>FINAL DECISION: {displayedUpdate.update_details.final_decision}</strong></p>
-                ) : null}
-                {newRecommendation ? (
-                  <p>New recommendation: <strong>{newRecommendation.experiment.name}</strong></p>
-                ) : null}
-              </section>
-            ) : null}
-
-            {sessionTerminated ? (
-              <p className="reason"><strong>Session terminated:</strong> {plannerState.planner.final_decision}</p>
-            ) : null}
-          </section>
-
-          <section className="detail-panel">
-            {selectedNode ? (
-              <>
-                <p className={`status-pill status-${selectedNode.status}`}>{selectedNode.status}</p>
-                <h2>{selectedNode.name}</h2>
-                <p className="question">{selectedNode.question}</p>
-
-                <dl>
-                  <div>
-                    <dt>Confidence</dt>
-                    <dd>{formatConfidence(selectedNode.confidence)}</dd>
-                  </div>
-                  <div>
-                    <dt>Depends on</dt>
-                    <dd>{selectedNode.depends_on.length ? selectedNode.depends_on.join(', ') : 'None'}</dd>
-                  </div>
-                  <div>
-                    <dt>Downstream</dt>
-                    <dd>{selectedNode.downstream.length ? selectedNode.downstream.join(', ') : 'None'}</dd>
-                  </div>
-                </dl>
-
-                <h3>Candidate Experiments</h3>
-                {selectedExperiments.length ? (
-                  <ul className="experiment-list">
-                    {selectedExperiments.map((experiment) => (
-                      <li key={experiment.id}>
-                        <strong>{experiment.name}</strong>
-                        <span>Cost {experiment.cost} | Time {experiment.time} | Power {experiment.discriminating_power}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted">No experiment defined for this node yet.</p>
-                )}
-              </>
-            ) : (
-              <p>Select a node to inspect its decision state.</p>
-            )}
-          </section>
-        </aside>
-      </section>
-    </main>
+    <div className="app-root">
+      <Environment stage={environmentStage} sweepToken={sweepToken} />
+      <div key={screen} className={`stage stage-${screen}${pendingScreen ? ' is-leaving' : ''}`}>
+        {content}
+      </div>
+    </div>
   )
 }
 
