@@ -623,10 +623,21 @@ def get_node_names_by_id_in_state(scenario_state, node_ids):
     return names
 
 
-def compare_program_states(positive_summary, negative_summary):
+def compare_program_states(positive_summary, negative_summary, tested_node_id=None):
     node_difference = calculate_boolean_map_difference(
         positive_summary["node_reachability"],
         negative_summary["node_reachability"],
+    )
+    adjusted_positive_node_reachability = positive_summary["node_reachability"].copy()
+    adjusted_negative_node_reachability = negative_summary["node_reachability"].copy()
+
+    if tested_node_id is not None:
+        adjusted_positive_node_reachability.pop(tested_node_id, None)
+        adjusted_negative_node_reachability.pop(tested_node_id, None)
+
+    adjusted_node_difference = calculate_boolean_map_difference(
+        adjusted_positive_node_reachability,
+        adjusted_negative_node_reachability,
     )
     useful_experiment_difference = calculate_set_difference(
         positive_summary["useful_experiment_ids"],
@@ -637,7 +648,7 @@ def compare_program_states(positive_summary, negative_summary):
         negative_summary["final_decision_reachability"],
     )
     marginal_decision_impact = (
-        node_difference
+        adjusted_node_difference
         + useful_experiment_difference
         + final_decision_difference
     ) / 3
@@ -652,7 +663,9 @@ def compare_program_states(positive_summary, negative_summary):
 
     return {
         "marginal_decision_impact": marginal_decision_impact,
-        "node_difference": node_difference,
+        "node_difference": adjusted_node_difference,
+        "raw_node_difference": node_difference,
+        "self_node_contribution": node_difference - adjusted_node_difference,
         "useful_experiment_difference": useful_experiment_difference,
         "final_decision_difference": final_decision_difference,
         "changed_node_names": get_node_names_by_id(changed_node_ids),
@@ -677,10 +690,21 @@ def compare_program_states(positive_summary, negative_summary):
     }
 
 
-def compare_program_states_in_state(scenario_state, positive_summary, negative_summary):
+def compare_program_states_in_state(scenario_state, positive_summary, negative_summary, tested_node_id=None):
     node_difference = calculate_boolean_map_difference(
         positive_summary["node_reachability"],
         negative_summary["node_reachability"],
+    )
+    adjusted_positive_node_reachability = positive_summary["node_reachability"].copy()
+    adjusted_negative_node_reachability = negative_summary["node_reachability"].copy()
+
+    if tested_node_id is not None:
+        adjusted_positive_node_reachability.pop(tested_node_id, None)
+        adjusted_negative_node_reachability.pop(tested_node_id, None)
+
+    adjusted_node_difference = calculate_boolean_map_difference(
+        adjusted_positive_node_reachability,
+        adjusted_negative_node_reachability,
     )
     useful_experiment_difference = calculate_set_difference(
         positive_summary["useful_experiment_ids"],
@@ -691,7 +715,7 @@ def compare_program_states_in_state(scenario_state, positive_summary, negative_s
         negative_summary["final_decision_reachability"],
     )
     marginal_decision_impact = (
-        node_difference
+        adjusted_node_difference
         + useful_experiment_difference
         + final_decision_difference
     ) / 3
@@ -706,7 +730,9 @@ def compare_program_states_in_state(scenario_state, positive_summary, negative_s
 
     return {
         "marginal_decision_impact": marginal_decision_impact,
-        "node_difference": node_difference,
+        "node_difference": adjusted_node_difference,
+        "raw_node_difference": node_difference,
+        "self_node_contribution": node_difference - adjusted_node_difference,
         "useful_experiment_difference": useful_experiment_difference,
         "final_decision_difference": final_decision_difference,
         "changed_node_names": get_node_names_by_id_in_state(scenario_state, changed_node_ids),
@@ -744,7 +770,11 @@ def calculate_marginal_decision_impact(experiment):
     positive_summary = summarize_program_state(positive_scenario)
     negative_summary = summarize_program_state(negative_scenario)
 
-    return compare_program_states(positive_summary, negative_summary)
+    return compare_program_states(
+        positive_summary,
+        negative_summary,
+        tested_node_id=experiment["tests_node"],
+    )
 
 
 def calculate_marginal_decision_impact_in_state(scenario_state, experiment):
@@ -761,6 +791,7 @@ def calculate_marginal_decision_impact_in_state(scenario_state, experiment):
         scenario_state,
         positive_summary,
         negative_summary,
+        tested_node_id=experiment["tests_node"],
     )
 
 
