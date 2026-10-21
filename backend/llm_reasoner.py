@@ -295,7 +295,7 @@ if __name__ == "__main__":
     scenario_file = (
         PROJECT_ROOT
         / "data"
-        / "propranolol-scenario-v2.json"
+        / "xanomeline-pdp-scenario.json"
     )
 
     scenario = load_scenario(
@@ -306,7 +306,7 @@ if __name__ == "__main__":
     # to rank the available experiments.
     planner_state = get_planner_state(
         scenario,
-        scenario_key="propranolol",
+        scenario_key="xanomeline",
     )
 
     # Extract only the grounded information
