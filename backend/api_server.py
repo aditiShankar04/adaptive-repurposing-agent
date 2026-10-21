@@ -4,6 +4,11 @@ from threading import Lock
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
+from llm_reasoner import (
+    build_explanation_context,
+    explain_recommendation,
+)
+
 from experiment_selector import (
     PROJECT_ROOT,
     apply_experiment_result,
@@ -29,6 +34,18 @@ SCENARIO_FILES = {
 
 sessions = {}
 sessions_lock = Lock()
+
+def build_llm_explanation(planner_state):
+    context = build_explanation_context(planner_state)
+
+    if context is None:
+        return {
+            "recommendation_explanation": (
+                "No experiment is currently recommended."
+            )
+        }
+
+    return explain_recommendation(context)
 
 
 class PlannerRequestHandler(BaseHTTPRequestHandler):
@@ -67,6 +84,9 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
 
         if parsed_url.path == "/api/planner":
             self.handle_planner_get(parsed_url)
+            return
+        if parsed_url.path == "/api/explain":
+            self.handle_explanation_get(parsed_url)
             return
 
         path_parts = parsed_url.path.strip("/").split("/")
@@ -127,7 +147,42 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        self.send_json(200, get_planner_state(scenario, scenario_key))
+        self.send_json(
+            200,
+            get_planner_state(scenario, scenario_key),
+        )
+
+    def handle_explanation_get(self, parsed_url):
+        scenario_key = self.get_scenario_key_from_query(parsed_url)
+        scenario = self.load_scenario_by_key(scenario_key)
+
+        if scenario is None:
+            self.send_json(
+                400,
+                {
+                    "error": "Unknown scenario",
+                    "allowed_scenarios": sorted(SCENARIO_FILES),
+                },
+            )
+            return
+
+        planner_state = get_planner_state(
+            scenario,
+            scenario_key,
+        )
+
+        explanation = build_llm_explanation(
+            planner_state
+        )
+
+        self.send_json(
+            200,
+            {
+                "scenario": scenario_key,
+                "recommendation": planner_state["recommendation"],
+                "llm_explanation": explanation,
+            },
+        )
 
     def handle_session_create(self):
         request_json = self.read_json_body()
@@ -284,6 +339,7 @@ def main():
     print("  GET  /api/sessions/{session_id}")
     print("  POST /api/sessions/{session_id}/result")
     print("  POST /api/sessions/{session_id}/reveal-historical-result")
+    print("  GET  /api/explain?scenario=demo|propranolol|propranolol-v1|xanomeline")
     server.serve_forever()
 
 
