@@ -322,6 +322,217 @@ def can_experiment_contribute_to_final_decision_in_state(scenario_state, experim
     return False
 
 
+DECISION_PATH_ROLE_PRIORITY = {
+    "blocking_required_experiment": 0,
+    "direct_final_decision_prerequisite": 1,
+    "required_path_prerequisite": 2,
+    "optional_redundant": 3,
+}
+
+
+def collect_required_blocker_node_ids_in_state(scenario_state, node_id, visiting=None):
+    if visiting is None:
+        visiting = set()
+
+    if node_id in visiting:
+        return set()
+
+    visiting.add(node_id)
+    node = find_node_in_state(scenario_state, node_id)
+
+    if node is None or node["status"] == "supported":
+        return set()
+
+    blocker_node_ids = {node_id}
+    dependency_logic = get_dependency_logic_for_node(node)
+
+    if dependency_logic == "none":
+        return blocker_node_ids
+
+    prerequisite_nodes = get_prerequisite_nodes_in_state(scenario_state, node)
+
+    if dependency_logic == "all":
+        for prerequisite_node in prerequisite_nodes:
+            if prerequisite_node["status"] != "supported":
+                blocker_node_ids.update(
+                    collect_required_blocker_node_ids_in_state(
+                        scenario_state,
+                        prerequisite_node["id"],
+                        visiting,
+                    )
+                )
+
+        return blocker_node_ids
+
+    if dependency_logic == "any":
+        if any(
+            prerequisite_node["status"] == "supported"
+            for prerequisite_node in prerequisite_nodes
+        ):
+            return blocker_node_ids
+
+        for prerequisite_node in prerequisite_nodes:
+            if prerequisite_node["status"] != "supported":
+                blocker_node_ids.update(
+                    collect_required_blocker_node_ids_in_state(
+                        scenario_state,
+                        prerequisite_node["id"],
+                        visiting,
+                    )
+                )
+
+        return blocker_node_ids
+
+    raise ValueError("Unknown dependency_logic: " + dependency_logic)
+
+
+def get_unresolved_final_decision_dependency_ids_in_state(scenario_state):
+    unresolved_dependency_ids = set()
+
+    for final_decision_node in get_final_decision_nodes_in_state(scenario_state):
+        for dependency_id in final_decision_node["depends_on"]:
+            dependency_node = find_node_in_state(scenario_state, dependency_id)
+
+            if dependency_node["status"] != "supported":
+                unresolved_dependency_ids.add(dependency_id)
+
+    return unresolved_dependency_ids
+
+
+def get_required_blocker_node_ids_in_state(scenario_state):
+    required_blocker_node_ids = set()
+
+    for dependency_id in get_unresolved_final_decision_dependency_ids_in_state(scenario_state):
+        required_blocker_node_ids.update(
+            collect_required_blocker_node_ids_in_state(
+                scenario_state,
+                dependency_id,
+            )
+        )
+
+    return {
+        node_id
+        for node_id in required_blocker_node_ids
+        if find_node_in_state(scenario_state, node_id)["status"]
+        not in ["supported", "contradicted"]
+    }
+
+
+def get_blocked_required_experiment_ids_in_state(
+    scenario_state,
+    node_id,
+    required_blocker_node_ids,
+):
+    blocked_experiment_ids = []
+
+    for experiment in scenario_state["experiments"]:
+        tested_node = find_node_in_state(scenario_state, experiment["tests_node"])
+
+        if tested_node["id"] not in required_blocker_node_ids:
+            continue
+
+        if tested_node["status"] in ["supported", "contradicted"]:
+            continue
+
+        if node_id not in tested_node["depends_on"]:
+            continue
+
+        if is_experiment_eligible_in_state(scenario_state, experiment):
+            continue
+
+        blocked_experiment_ids.append(experiment["id"])
+
+    return blocked_experiment_ids
+
+
+def classify_decision_path_role_in_state(scenario_state, experiment):
+    node_id = experiment["tests_node"]
+    required_blocker_node_ids = get_required_blocker_node_ids_in_state(scenario_state)
+    unresolved_final_dependency_ids = get_unresolved_final_decision_dependency_ids_in_state(
+        scenario_state,
+    )
+    blocked_experiment_ids = get_blocked_required_experiment_ids_in_state(
+        scenario_state,
+        node_id,
+        required_blocker_node_ids,
+    )
+
+    if blocked_experiment_ids:
+        decision_path_role = "blocking_required_experiment"
+    elif node_id in unresolved_final_dependency_ids:
+        decision_path_role = "direct_final_decision_prerequisite"
+    elif node_id in required_blocker_node_ids:
+        decision_path_role = "required_path_prerequisite"
+    else:
+        decision_path_role = "optional_redundant"
+
+    return {
+        "decision_path_role": decision_path_role,
+        "blocked_required_experiment_ids": blocked_experiment_ids,
+        "required_blocker_node_ids": sorted(required_blocker_node_ids),
+        "unresolved_final_dependency_ids": sorted(unresolved_final_dependency_ids),
+    }
+
+
+def rank_experiment_scores_with_zero_fallback(scenario_state, experiment_scores):
+    annotated_scores = []
+
+    for original_index, experiment_score in enumerate(experiment_scores):
+        role_details = classify_decision_path_role_in_state(
+            scenario_state,
+            experiment_score["experiment"],
+        )
+        experiment_score["impact_details"].update(role_details)
+        experiment_score["decision_path_role"] = role_details["decision_path_role"]
+        annotated_scores.append((original_index, experiment_score))
+
+    positive_scores = [
+        (original_index, experiment_score)
+        for original_index, experiment_score in annotated_scores
+        if experiment_score["score"] > 0
+    ]
+    required_zero_scores = [
+        (original_index, experiment_score)
+        for original_index, experiment_score in annotated_scores
+        if experiment_score["score"] <= 0
+        and experiment_score["decision_path_role"] != "optional_redundant"
+    ]
+    optional_zero_scores = [
+        (original_index, experiment_score)
+        for original_index, experiment_score in annotated_scores
+        if experiment_score["score"] <= 0
+        and experiment_score["decision_path_role"] == "optional_redundant"
+    ]
+
+    if not positive_scores and not required_zero_scores:
+        return []
+
+    ranked_positive_scores = sorted(
+        positive_scores,
+        key=lambda indexed_score: (-indexed_score[1]["score"], indexed_score[0]),
+    )
+    ranked_required_zero_scores = sorted(
+        required_zero_scores,
+        key=lambda indexed_score: (
+            DECISION_PATH_ROLE_PRIORITY[indexed_score[1]["decision_path_role"]],
+            indexed_score[0],
+        ),
+    )
+    ranked_optional_zero_scores = sorted(
+        optional_zero_scores,
+        key=lambda indexed_score: indexed_score[0],
+    )
+
+    return [
+        experiment_score
+        for _, experiment_score in (
+            ranked_positive_scores
+            + ranked_required_zero_scores
+            + ranked_optional_zero_scores
+        )
+    ]
+
+
 def score_experiment_in_state(scenario_state, experiment):
     node = find_node_in_state(scenario_state, experiment["tests_node"])
     uncertainty = calculate_uncertainty(node)
@@ -374,11 +585,7 @@ def rank_experiments_in_state(scenario_state, completed_experiment_ids=None):
         ):
             experiment_scores.append(score_experiment_in_state(scenario_state, experiment))
 
-    return sorted(
-        experiment_scores,
-        key=lambda experiment_score: experiment_score["score"],
-        reverse=True,
-    )
+    return rank_experiment_scores_with_zero_fallback(scenario_state, experiment_scores)
 
 
 def prioritize_pending_repeat_in_state(ranked_experiments, pending_repeat_experiment_id):
@@ -1488,11 +1695,7 @@ def rank_experiments(completed_experiment_ids=None):
         ):
             experiment_scores.append(score_experiment(experiment))
 
-    return sorted(
-        experiment_scores,
-        key=lambda experiment_score: experiment_score["score"],
-        reverse=True,
-    )
+    return rank_experiment_scores_with_zero_fallback(scenario, experiment_scores)
 
 
 def prioritize_pending_repeat(ranked_experiments, pending_repeat_experiment_id):
@@ -1766,8 +1969,24 @@ def get_planner_state(
         completed_experiment_ids = set()
 
     sanitized_scenario = sanitize_scenario_for_planner(scenario_state)
+    final_decision_nodes = get_final_decision_nodes_in_state(scenario_state)
+    final_decisions = [
+        evaluate_final_decision_in_state(scenario_state, node)
+        for node in final_decision_nodes
+    ]
+    final_decision_details = None
 
-    if terminated:
+    for evaluated_final_decision in final_decisions:
+        if evaluated_final_decision["decision"] == "GO":
+            final_decision_details = evaluated_final_decision
+            break
+
+    resolved_final_decision = final_decision
+
+    if final_decision_details is not None:
+        resolved_final_decision = final_decision_details["decision"]
+
+    if terminated or final_decision_details is not None:
         ranked_experiments = []
     else:
         ranked_experiments = rank_experiments_in_state(
@@ -1791,23 +2010,6 @@ def get_planner_state(
             "experiment_id": top_experiment["experiment"]["id"],
             "node_id": top_experiment["node"]["id"],
         }
-
-    final_decision_nodes = get_final_decision_nodes_in_state(scenario_state)
-    final_decisions = [
-        evaluate_final_decision_in_state(scenario_state, node)
-        for node in final_decision_nodes
-    ]
-    final_decision_details = None
-
-    for evaluated_final_decision in final_decisions:
-        if evaluated_final_decision["decision"] == "GO":
-            final_decision_details = evaluated_final_decision
-            break
-
-    resolved_final_decision = final_decision
-
-    if final_decision_details is not None:
-        resolved_final_decision = final_decision_details["decision"]
 
     unreachable_dependencies = []
 
