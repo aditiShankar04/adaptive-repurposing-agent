@@ -93,6 +93,8 @@ function FinalDecisionPanel({ finalDecisionDetails, activeRestrictions }) {
 
 function ResearchWorkspace({
   plannerState,
+  explanation,
+  explanationLoading,
   previewScenario,
   previewFileName,
   onChangeScenario,
@@ -233,7 +235,7 @@ function ResearchWorkspace({
             isPreview={isPreview}
             recommendation={topRankedExperiment}
             plannerMessage={plannerState?.planner?.message}
-            explanation={topRankedExperiment?.llm_explanation ?? topRankedExperiment?.explanation ?? topRankedExperiment?.recommendation_explanation}
+            explanation={explanation}
             unlockedNodes={unlockedNodes}
             onSelectNode={selectNode}
             selectedResult={selectedResult}

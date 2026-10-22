@@ -45,9 +45,60 @@ function App() {
   const [selectedQc, setSelectedQc] = useState('pass')
   const [lastUpdate, setLastUpdate] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [explanation, setExplanation] = useState(null)
+  const [explanationLoading, setExplanationLoading] = useState(false)
   const timers = useRef([])
 
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
+
+  useEffect(() => {
+  const recommendationId = plannerState?.recommendation?.experiment_id
+
+  if (!sessionId || !recommendationId) {
+    setExplanation(null)
+    return
+  }
+
+  let ignore = false
+
+  async function fetchExplanation() {
+    setExplanation(null)
+    setExplanationLoading(true)
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/explain`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ?? `Labyrinth API returned ${response.status}`
+        )
+      }
+
+      if (!ignore) {
+        setExplanation(
+          data.llm_explanation?.recommendation_explanation ?? null
+        )
+      }
+    } catch (fetchError) {
+      console.error('Failed to load recommendation explanation:', fetchError)
+
+      if (!ignore) {
+        setExplanation(null)
+      }
+    } finally {
+      if (!ignore) {
+        setExplanationLoading(false)
+      }
+    }
+  }
+
+  fetchExplanation()
+
+  return () => {
+    ignore = true
+  }
+}, [sessionId, plannerState?.recommendation?.experiment_id])
 
   function later(callback, ms) {
     timers.current.push(setTimeout(callback, ms))
@@ -211,6 +262,8 @@ function App() {
         <ResearchWorkspace
           key={loadCount}
           plannerState={plannerState}
+          explanation={explanation}
+          explanationLoading={explanationLoading}
           previewScenario={previewScenario}
           previewFileName={previewFileName}
           onChangeScenario={goToSelector}
