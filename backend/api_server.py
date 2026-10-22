@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
+import os
 
 from llm_reasoner import (
     build_explanation_context,
@@ -22,8 +23,8 @@ from experiment_selector import (
 )
 
 
-HOST = "127.0.0.1"
-PORT = 8000
+HOST = os.getenv("HOST", "127.0.0.1")
+PORT = int(os.getenv("PORT", "8000"))
 
 SCENARIO_FILES = {
     "demo": PROJECT_ROOT / "data" / "demo-scenario.json",
