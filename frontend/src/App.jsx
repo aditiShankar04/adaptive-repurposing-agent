@@ -43,8 +43,8 @@ function App() {
   const [uploadState, setUploadState] = useState(null)
   const [loadingKey, setLoadingKey] = useState(null)
   const [error, setError] = useState(null)
-  const [selectedResult, setSelectedResult] = useState('positive')
-  const [selectedQc, setSelectedQc] = useState('pass')
+  const [selectedResult, setSelectedResult] = useState('')
+  const [selectedQc, setSelectedQc] = useState('')
   const [lastUpdate, setLastUpdate] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [explanation, setExplanation] = useState(null)
@@ -135,6 +135,8 @@ function App() {
     setLoadingKey(scenarioKey)
     setError(null)
     setLastUpdate(null)
+    setSelectedResult('')
+    setSelectedQc('')
     setSessionId(null)
     setPlannerState(null)
     setPreviewScenario(null)
@@ -206,8 +208,8 @@ function App() {
       if (!response.ok) throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
       setPlannerState(data.planner_state)
       setLastUpdate(data)
-      setSelectedResult('positive')
-      setSelectedQc('pass')
+      setSelectedResult('')
+      setSelectedQc('')
     } catch (submitError) {
       setError(submitError.message)
     } finally {
@@ -219,7 +221,7 @@ function App() {
   function handleSubmitResult(event) {
     event.preventDefault()
     const topRankedExperiment = plannerState?.ranked_experiments?.[0] ?? null
-    if (!topRankedExperiment) return
+    if (!topRankedExperiment || !selectedResult || !selectedQc) return
     applyResult('result', {
       experiment_id: topRankedExperiment.experiment.id,
       result: selectedResult,

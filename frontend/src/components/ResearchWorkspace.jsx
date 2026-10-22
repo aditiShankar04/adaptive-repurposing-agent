@@ -46,15 +46,15 @@ function UpdatePanel({ lastUpdate, plannerState, historicalReplay, onDismiss }) 
     )
   }
 
-  // A manual result inside a historical scenario is exploration, not history.
-  const exploredOutcome = historicalReplay
-  const eyebrow = exploredOutcome ? 'explored outcome' : 'last update'
+  // Only manual results inside a historical scenario get a card (explored, not history);
+  // prospective scenarios show no update card.
+  if (!historicalReplay) return null
 
   return (
-    <section className="update-panel" aria-label={eyebrow}>
+    <section className="update-panel" aria-label="explored outcome">
       {closeButton}
-      <p className="panel-eyebrow">{eyebrow}</p>
-      {exploredOutcome ? <p className="update-note">this result was supplied by the user to explore how labyrinth would adapt.</p> : null}
+      <p className="panel-eyebrow">explored outcome</p>
+      <p className="update-note">this result was supplied by the user to explore how labyrinth would adapt.</p>
       <h3>{displayedUpdate.experiment.name}</h3>
       <p>result: <strong>{displayedUpdate.submitted_result.result}</strong> · qc: <strong>{displayedUpdate.submitted_result.qc}</strong></p>
       <p>{displayedUpdate.update_details.reason}</p>
@@ -190,7 +190,8 @@ function ResearchWorkspace({
     setSelectedNodeId(null)
   }
 
-  const updateVisible = !isPreview && Boolean(lastUpdate) && !updateDismissed
+  const hasUpdateCard = !isPreview && Boolean(lastUpdate) && historicalReplay
+  const updateVisible = hasUpdateCard && !updateDismissed
   useEffect(() => {
     if (!detailsOpen && !updateVisible && !endDialogOpen) return undefined
     function onKeyDown(event) {
@@ -310,8 +311,8 @@ function ResearchWorkspace({
               onDismiss={() => setDismissedUpdate(lastUpdate)}
             />
           )}
-          {!isPreview && lastUpdate && updateDismissed && (
-            <button type="button" className="update-pill" onClick={() => setDismissedUpdate(null)}>view last update</button>
+          {hasUpdateCard && updateDismissed && (
+            <button type="button" className="update-pill" onClick={() => setDismissedUpdate(null)}>view last result</button>
           )}
         </section>
         {endDialogOpen && (

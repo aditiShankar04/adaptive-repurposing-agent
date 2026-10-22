@@ -199,7 +199,8 @@ function RecommendationPanel({
           <p className="action-note">enter an outcome and see how labyrinth adapts.</p>
           <label>
             <span>result</span>
-            <select value={selectedResult} onChange={(event) => onResultChange(event.target.value)} disabled={locked}>
+            <select value={selectedResult} onChange={(event) => onResultChange(event.target.value)} disabled={locked} required>
+              <option value="" disabled>select a result</option>
               <option value="positive">supports hypothesis</option>
               <option value="negative">contradicts hypothesis</option>
               <option value="inconclusive">inconclusive</option>
@@ -207,13 +208,14 @@ function RecommendationPanel({
           </label>
           <label>
             <span>qc</span>
-            <select value={selectedQc} onChange={(event) => onQcChange(event.target.value)} disabled={locked}>
+            <select value={selectedQc} onChange={(event) => onQcChange(event.target.value)} disabled={locked} required>
+              <option value="" disabled>select qc</option>
               <option value="pass">pass</option>
               <option value="questionable">questionable</option>
               <option value="fail">fail</option>
             </select>
           </label>
-          <button type="submit" className="run-button" disabled={locked}>
+          <button type="submit" className="run-button" disabled={locked || !selectedResult || !selectedQc}>
             {submitting ? 'applying...' : 'submit result'}
           </button>
         </form>
