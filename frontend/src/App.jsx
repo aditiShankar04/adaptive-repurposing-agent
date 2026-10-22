@@ -10,6 +10,8 @@ import ScenarioValidation from './components/ScenarioValidation.jsx'
 import useReducedMotion from './hooks/useReducedMotion.js'
 import { readScenarioFile } from './scenarioValidation.js'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://adaptive-repurposing-agent.onrender.com'
+
 const LEAVE_MS = 380
 const MIN_VALIDATING_MS = 400
 const ENVIRONMENT_STAGE = {
@@ -70,7 +72,7 @@ function App() {
     setExplanationLoading(true)
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/explain`)
+      const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/explain`)
       const data = await response.json()
 
       if (!response.ok) {
@@ -144,7 +146,7 @@ function App() {
     setPreviewFileName(null)
 
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await fetch(`${API_BASE_URL}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario: scenarioKey }),
@@ -200,7 +202,7 @@ function App() {
     setError(null)
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/${path}`, {
+      const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
