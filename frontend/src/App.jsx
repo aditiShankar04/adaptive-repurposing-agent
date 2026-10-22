@@ -10,7 +10,7 @@ import ScenarioValidation from './components/ScenarioValidation.jsx'
 import useReducedMotion from './hooks/useReducedMotion.js'
 import { readScenarioFile } from './scenarioValidation.js'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://adaptive-repurposing-agent.onrender.com'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 const LEAVE_MS = 380
 const MIN_VALIDATING_MS = 400
