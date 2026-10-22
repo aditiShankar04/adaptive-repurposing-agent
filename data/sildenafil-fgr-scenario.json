@@ -168,7 +168,14 @@
       "negative_action": "reprioritize",
       "negative_scope": "pregnancy_prolongation",
       "inconclusive_action": "repeat",
-      "historical_result": "negative",
+      "historical_result": {
+        "planner_outcome": "negative",
+        "evidence_class": "observed_historical",
+        "summary": "UK STRIDER (135 randomized: 70 sildenafil, 65 placebo) found no significant prolongation of pregnancy: median 17 days from randomization to delivery with sildenafil vs 18 days with placebo.",
+        "planner_action": "reprioritize",
+        "scope": "pregnancy_prolongation",
+        "candidate_survives": true
+      },
       "historical_result_hidden": true,
       "interpretation_notes": "UK trial: median 17 days sildenafil vs 18 days placebo; no significant improvement. Negative = no demonstrated efficacy, not proof of no possible effect.",
       "source": "https://pubmed.ncbi.nlm.nih.gov/30169244/"
@@ -184,7 +191,14 @@
       "negative_action": "more_evidence",
       "negative_scope": "perinatal_benefit",
       "inconclusive_action": "repeat",
-      "historical_result": "negative",
+      "historical_result": {
+        "planner_outcome": "negative",
+        "evidence_class": "observed_historical",
+        "summary": "UK STRIDER did not demonstrate meaningful improvements in birthweight or major perinatal outcomes.",
+        "planner_action": "more_evidence",
+        "scope": "perinatal_benefit",
+        "candidate_survives": true
+      },
       "historical_result_hidden": true,
       "interpretation_notes": "UK trial did not demonstrate meaningful improvements in birthweight or major perinatal outcomes; endpoints from same trial are correlated, not independent experiments.",
       "source": "https://pubmed.ncbi.nlm.nih.gov/30169244/"
@@ -200,7 +214,14 @@
       "negative_action": "kill",
       "negative_scope": "candidate",
       "inconclusive_action": "repeat",
-      "historical_result": "negative",
+      "historical_result": {
+        "planner_outcome": "negative",
+        "evidence_class": "observed_historical",
+        "summary": "Dutch STRIDER (216 randomized) demonstrated no perinatal benefit: the primary composite of perinatal mortality or major morbidity occurred in 60.2% with sildenafil vs 54.2% with placebo.",
+        "planner_action": "kill",
+        "scope": "candidate",
+        "candidate_survives": false
+      },
       "historical_result_hidden": true,
       "interpretation_notes": "Dutch trial: 60.2% sildenafil vs 54.2% placebo for primary composite; no demonstrated benefit. A negative result alone requires interpretation of power, confidence intervals, and safety.",
       "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7301225/"
@@ -216,7 +237,14 @@
       "negative_action": "kill",
       "negative_scope": "candidate",
       "inconclusive_action": "repeat",
-      "historical_result": "negative",
+      "historical_result": {
+        "planner_outcome": "negative",
+        "evidence_class": "observed_historical",
+        "summary": "Dutch STRIDER found more neonatal pulmonary hypertension with sildenafil (18.8% vs 5.1% with placebo); the trial was stopped early.",
+        "planner_action": "kill",
+        "scope": "candidate",
+        "candidate_survives": false
+      },
       "historical_result_hidden": true,
       "interpretation_notes": "Unfavorable safety outcome: neonatal pulmonary hypertension 18.8% sildenafil vs 5.1% placebo; trial stopped early. Safety review is mandatory; not an autonomous clinical decision.",
       "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7301225/",
@@ -233,7 +261,14 @@
       "negative_action": "reprioritize",
       "negative_scope": "perinatal_benefit",
       "inconclusive_action": "repeat",
-      "historical_result": "negative",
+      "historical_result": {
+        "planner_outcome": "negative",
+        "evidence_class": "observed_historical",
+        "summary": "Two-year follow-up of UK STRIDER children did not demonstrate improved neurodevelopment.",
+        "planner_action": "reprioritize",
+        "scope": "perinatal_benefit",
+        "candidate_survives": true
+      },
       "historical_result_hidden": true,
       "interpretation_notes": "Later follow-up did not demonstrate improved neurodevelopment; reveal only after the original trials in chronology-aware replay.",
       "source": "https://pubmed.ncbi.nlm.nih.gov/38923115/"

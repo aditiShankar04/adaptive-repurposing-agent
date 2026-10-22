@@ -1,0 +1,226 @@
+/* Shared environment. [data-stage] on .env: landing | select | workspace.
+   Maze and cells animate transform / opacity / dashoffset only. */
+
+.env {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--page);
+  animation: env-in 1000ms ease both;
+}
+
+@keyframes env-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- Atmosphere ---------- */
+
+.env-wash {
+  position: absolute;
+  width: 90vmax;
+  height: 90vmax;
+  border-radius: 50%;
+  transition: transform 1800ms var(--ease-out), opacity 1200ms ease;
+}
+
+.env-wash-a {
+  left: -35vmax;
+  top: -45vmax;
+  background: radial-gradient(closest-side, rgba(139, 149, 224, 0.16), transparent);
+  animation: wash-drift 90s ease-in-out infinite alternate;
+}
+
+.env-wash-b {
+  right: -45vmax;
+  bottom: -52vmax;
+  background: radial-gradient(closest-side, rgba(150, 190, 215, 0.17), transparent);
+  animation: wash-drift 110s ease-in-out -40s infinite alternate-reverse;
+}
+
+.env[data-stage='select'] .env-wash-a { transform: translate3d(30vw, 14vh, 0); }
+.env[data-stage='select'] .env-wash-b { transform: translate3d(-24vw, -12vh, 0); }
+.env[data-stage='workspace'] .env-wash-a { transform: translate3d(12vw, 6vh, 0) scale(0.8); }
+.env[data-stage='workspace'] .env-wash-b { transform: translate3d(-10vw, -4vh, 0) scale(0.85); opacity: 0.8; }
+
+@keyframes wash-drift {
+  from { margin: 0; }
+  to { margin: 3vmax 0 0 2vmax; }
+}
+
+/* Workspace only: a faint control-room grid that fades toward the edges. */
+.env-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1400ms ease;
+  background-image:
+    linear-gradient(rgba(25, 22, 47, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(25, 22, 47, 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, #000 20%, transparent 78%);
+  mask-image: radial-gradient(ellipse at 50% 45%, #000 20%, transparent 78%);
+  animation: grid-shift 80s linear infinite;
+}
+
+.env[data-stage='workspace'] .env-grid { opacity: 1; }
+
+@keyframes grid-shift {
+  to { background-position: 56px 56px; }
+}
+
+/* ---------- Maze: an active decision network ---------- */
+
+.env-maze {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.maze { opacity: 0; transition: opacity 1200ms ease; }
+.env[data-stage='landing'] .maze-landing,
+.env[data-stage='select'] .maze-select,
+.env[data-stage='workspace'] .maze-workspace { opacity: 1; }
+
+.maze path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Two parallax layers drifting at different, very slow speeds. */
+.maze-layer-far { animation: maze-parallax-far 120s ease-in-out infinite alternate; }
+.maze-layer-near { animation: maze-parallax-near 75s ease-in-out infinite alternate; }
+
+@keyframes maze-parallax-far {
+  from { transform: translate(-8px, 5px); }
+  to { transform: translate(9px, -6px); }
+}
+
+@keyframes maze-parallax-near {
+  from { transform: translate(14px, -8px); }
+  to { transform: translate(-16px, 10px); }
+}
+
+.maze-line { stroke-width: 1.3; vector-effect: non-scaling-stroke; }
+.tint-ink { stroke: rgba(25, 22, 47, 0.13); }
+.tint-peri { stroke: rgba(111, 122, 208, 0.34); }
+.tint-coral { stroke: rgba(207, 106, 85, 0.4); }
+.maze-layer-near .tint-ink { stroke: rgba(25, 22, 47, 0.17); }
+
+/* Lines breathe in opacity, each on its own phase. */
+.maze-line.is-pulsing { animation: maze-pulse 11s ease-in-out var(--pd, 0s) infinite; }
+
+@keyframes maze-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.maze-node { stroke-width: 1.3; vector-effect: non-scaling-stroke; fill: none; }
+.maze-node.tint-peri { stroke: rgba(111, 122, 208, 0.6); }
+.maze-node.tint-coral { stroke: rgba(207, 106, 85, 0.6); }
+
+/* A slow accent segment travelling along one route per screen. */
+.maze-trace {
+  stroke: rgba(59, 79, 196, 0.5);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 0.12 1.2;
+  stroke-dashoffset: 0.12;
+  animation: maze-travel 42s linear infinite;
+}
+
+@keyframes maze-travel { to { stroke-dashoffset: -1.2; } }
+
+/* One route slowly extends and retracts. */
+.maze-breathe {
+  stroke: rgba(111, 122, 208, 0.55);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1 1;
+  animation: maze-breathe 26s ease-in-out infinite alternate;
+}
+
+@keyframes maze-breathe {
+  from { stroke-dashoffset: 0.55; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Occasional illumination: a short bright pulse runs along the route, then it rests. */
+.maze-light {
+  stroke: rgba(59, 79, 196, 0.55);
+  stroke-width: 1.7;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 0.16 1.3;
+  stroke-dashoffset: 0.16;
+  opacity: 0;
+  animation: maze-light 24s ease-in-out var(--ld, 0s) infinite;
+}
+
+@keyframes maze-light {
+  0% { stroke-dashoffset: 0.16; opacity: 0; }
+  3% { opacity: 1; }
+  22% { stroke-dashoffset: -1.3; opacity: 1; }
+  25%, 100% { stroke-dashoffset: -1.3; opacity: 0; }
+}
+
+/* Travelling signals (SMIL animateMotion, rendered only when motion is allowed). */
+.maze-signal { fill: rgba(59, 79, 196, 0.85); filter: drop-shadow(0 0 3px rgba(59, 79, 196, 0.45)); }
+.maze-workspace .maze-signal { fill: rgba(106, 75, 201, 0.85); }
+
+/* Get Started: a route draws across the screen, then fades. Plays once per mount. */
+.maze-go {
+  stroke: rgba(59, 79, 196, 0.62);
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  animation: maze-go 880ms cubic-bezier(0.5, 0, 0.2, 1) both;
+}
+
+@keyframes maze-go {
+  0% { stroke-dashoffset: 1; opacity: 1; }
+  75% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* ---------- Cells: positioned and deformed from JS (Environment.jsx) ---------- */
+
+.env-cells {
+  position: absolute;
+  inset: 0;
+  transition: opacity 1400ms ease;
+}
+
+.env[data-stage='workspace'] .env-cells { opacity: 0.6; }
+
+.env-cell {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.env-cell svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.cell-purple { --m-fill: rgba(139, 149, 224, 0.1); --m-stroke: rgba(111, 122, 208, 0.5); --n-fill: rgba(90, 140, 214, 0.2); --n-stroke: rgba(70, 120, 200, 0.4); --o-fill: rgba(111, 122, 208, 0.4); }
+.cell-teal { --m-fill: rgba(110, 190, 190, 0.11); --m-stroke: rgba(52, 150, 152, 0.5); --n-fill: rgba(40, 140, 150, 0.2); --n-stroke: rgba(40, 130, 140, 0.42); --o-fill: rgba(52, 150, 152, 0.42); }
+.cell-coral { --m-fill: rgba(230, 150, 130, 0.11); --m-stroke: rgba(207, 106, 85, 0.5); --n-fill: rgba(207, 106, 85, 0.2); --n-stroke: rgba(190, 95, 75, 0.42); --o-fill: rgba(207, 106, 85, 0.45); }
+
+.cell-membrane { fill: var(--m-fill); stroke: var(--m-stroke); stroke-width: 1.4; }
+.cell-inner { fill: none; stroke: var(--m-stroke); stroke-width: 1; opacity: 0.45; }
+.cell-nucleus { fill: var(--n-fill); stroke: var(--n-stroke); stroke-width: 1; }
+.cell-organelle { fill: var(--o-fill); }
+.cell-organelle.cell-accent { fill: rgba(207, 106, 85, 0.6); }
+
+@media (prefers-reduced-motion: reduce) {
+  .env { animation: none; }
+  .env-wash-a, .env-wash-b, .env-grid, .maze-layer-far, .maze-layer-near, .maze-line.is-pulsing,
+  .maze-trace, .maze-breathe, .maze-light, .maze-go { animation: none; }
+  .env-wash, .maze, .env-cells, .env-grid { transition-duration: 1ms; }
+  .maze-trace, .maze-light, .maze-go { display: none; }
+  .maze-breathe { stroke-dashoffset: 0; }
+}
