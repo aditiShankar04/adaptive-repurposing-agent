@@ -50,6 +50,7 @@ function App() {
   const [explanation, setExplanation] = useState(null)
   const [explanationLoading, setExplanationLoading] = useState(false)
   const timers = useRef([])
+  const applying = useRef(false)
 
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
@@ -187,55 +188,48 @@ function App() {
     go('scenario-select')
   }
 
-  async function handleSubmitResult(event) {
-    event.preventDefault()
-    const topRankedExperiment = plannerState?.ranked_experiments?.[0] ?? null
-    if (!sessionId || !topRankedExperiment) return
-
+  // One result per recommendation: the ref lock blocks a second submit/reveal before
+  // the replanned state arrives, so nothing is applied to a stale recommendation.
+  async function applyResult(path, body) {
+    if (applying.current || !sessionId) return
+    applying.current = true
     setSubmitting(true)
     setError(null)
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/result`, {
+      const response = await fetch(`/api/sessions/${sessionId}/${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          experiment_id: topRankedExperiment.experiment.id,
-          result: selectedResult,
-          qc: selectedQc,
-        }),
+        body: JSON.stringify(body),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
       setPlannerState(data.planner_state)
       setLastUpdate(data)
+      setSelectedResult('positive')
+      setSelectedQc('pass')
     } catch (submitError) {
       setError(submitError.message)
     } finally {
+      applying.current = false
       setSubmitting(false)
     }
   }
 
-  async function handleRevealHistoricalEvidence() {
-    if (!sessionId || !plannerState?.ranked_experiments?.[0]) return
-    setSubmitting(true)
-    setError(null)
+  function handleSubmitResult(event) {
+    event.preventDefault()
+    const topRankedExperiment = plannerState?.ranked_experiments?.[0] ?? null
+    if (!topRankedExperiment) return
+    applyResult('result', {
+      experiment_id: topRankedExperiment.experiment.id,
+      result: selectedResult,
+      qc: selectedQc,
+    })
+  }
 
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/reveal-historical-result`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error ?? `Labyrinth API returned ${response.status}`)
-      setPlannerState(data.planner_state)
-      setLastUpdate(data)
-    } catch (submitError) {
-      setError(submitError.message)
-    } finally {
-      setSubmitting(false)
-    }
+  function handleRevealHistoricalEvidence() {
+    if (!plannerState?.ranked_experiments?.[0]) return
+    applyResult('reveal-historical-result', {})
   }
 
   let content = null
@@ -278,6 +272,7 @@ function App() {
           previewScenario={previewScenario}
           previewFileName={previewFileName}
           onChangeScenario={goToSelector}
+          onEndExploration={goToSelector}
           onSubmitResult={handleSubmitResult}
           onRevealHistoricalEvidence={handleRevealHistoricalEvidence}
           selectedResult={selectedResult}

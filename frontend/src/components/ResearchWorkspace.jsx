@@ -4,6 +4,8 @@ import '@xyflow/react/dist/style.css'
 
 import DecisionNode from './DecisionNode.jsx'
 import NodeDetailPanel from './NodeDetailPanel.jsx'
+import ProgramOutlook from './ProgramOutlook.jsx'
+import { outlookHeadline } from './outlook.js'
 import RecommendationPanel from './RecommendationPanel.jsx'
 import StatusLegend from './StatusLegend.jsx'
 import Wordmark from './Wordmark.jsx'
@@ -20,32 +22,41 @@ function formatConfidence(confidence) {
   return `${Math.round(confidence * 100)}%`
 }
 
-function UpdatePanel({ lastUpdate, plannerState, onDismiss }) {
+function UpdatePanel({ lastUpdate, plannerState, historicalReplay, onDismiss }) {
   if (!lastUpdate) return null
 
   const historicalEvidence = lastUpdate.historical_evidence
   const displayedUpdate = lastUpdate.transition ?? lastUpdate
   const newRecommendation = plannerState.ranked_experiments[0]
+  const closeButton = (
+    <button type="button" className="panel-close" onClick={onDismiss} aria-label="close this update (the planner state is kept)">
+      <span aria-hidden="true">×</span>
+    </button>
+  )
+
+  // A revealed historical result shows only what was observed.
+  if (historicalEvidence) {
+    return (
+      <section className="update-panel" aria-label="historical result">
+        {closeButton}
+        <h3 className="update-title">{displayedUpdate.experiment.name}</h3>
+        <p>historical outcome: <strong>{String(historicalEvidence.historical_outcome).replaceAll('_', ' ')}</strong></p>
+        {historicalEvidence.summary ? <p>{historicalEvidence.summary}</p> : null}
+      </section>
+    )
+  }
+
+  // A manual result inside a historical scenario is exploration, not history.
+  const exploredOutcome = historicalReplay
+  const eyebrow = exploredOutcome ? 'explored outcome' : 'last update'
 
   return (
-    <section className="update-panel" aria-label={historicalEvidence ? 'historical outcome' : 'last update'}>
-      <button type="button" className="panel-close" onClick={onDismiss} aria-label="close this update (the planner state is kept)">
-        <span aria-hidden="true">×</span>
-      </button>
-      <p className="panel-eyebrow">{historicalEvidence ? 'historical replay' : 'last update'}</p>
+    <section className="update-panel" aria-label={eyebrow}>
+      {closeButton}
+      <p className="panel-eyebrow">{eyebrow}</p>
+      {exploredOutcome ? <p className="update-note">this result was supplied by the user to explore how labyrinth would adapt.</p> : null}
       <h3>{displayedUpdate.experiment.name}</h3>
-      {historicalEvidence ? (
-        <>
-          <p>historical outcome: <strong>{historicalEvidence.historical_outcome}</strong></p>
-          <p>evidence class: <strong>{historicalEvidence.evidence_class}</strong></p>
-          <p>{historicalEvidence.summary}</p>
-          <p>applied result: <strong>{historicalEvidence.applied_result}</strong> · qc: <strong>{historicalEvidence.qc}</strong></p>
-          {historicalEvidence.historical_action ? <p><strong>historical action: {historicalEvidence.historical_action}</strong></p> : null}
-          {historicalEvidence.scope ? <p>scope: <strong>{historicalEvidence.scope}</strong></p> : null}
-        </>
-      ) : (
-        <p>result: <strong>{displayedUpdate.submitted_result.result}</strong> · qc: <strong>{displayedUpdate.submitted_result.qc}</strong></p>
-      )}
+      <p>result: <strong>{displayedUpdate.submitted_result.result}</strong> · qc: <strong>{displayedUpdate.submitted_result.qc}</strong></p>
       <p>{displayedUpdate.update_details.reason}</p>
       <p>
         node: <strong>{displayedUpdate.node_before_update.status}</strong> ({formatConfidence(displayedUpdate.node_before_update.confidence)}){' '}
@@ -60,70 +71,24 @@ function UpdatePanel({ lastUpdate, plannerState, onDismiss }) {
   )
 }
 
-function StrategyPanel({ projected, nodeById, selectedNodeId, onSelectNode, mutedCount }) {
-  const shown = projected.orderedIds.filter((id) => nodeById[id])
+function EndExplorationDialog({ outlook, onCancel, onConfirm }) {
+  const terminal = outlook && ['final_decision_reached', 'no_go'].includes(outlook.state)
   return (
-    <section className="strategy-panel" aria-label="current projected path">
-      <p className="panel-eyebrow">current strategy</p>
-      {projected.available && shown.length ? <h3>current projected path</h3> : null}
-      {projected.available && shown.length ? (
-        <>
-          <p className="strategy-basis">based on current evidence</p>
-          <ol className="strategy-chain">
-            {shown.map((id) => (
-              <li key={id}>
-                <button
-                  type="button"
-                  className={`strategy-chip${selectedNodeId === id ? ' is-selected' : ''}`}
-                  onClick={() => onSelectNode(id)}
-                >
-                  {nodeById[id].name}
-                </button>
-              </li>
-            ))}
-          </ol>
-          {projected.summary ? <p className="strategy-summary">{projected.summary}</p> : null}
-        </>
-      ) : (
-        <p className="strategy-empty">current projected path: not provided by the planner yet.</p>
-      )}
-      {mutedCount ? <p className="strategy-muted">{mutedCount} branch{mutedCount === 1 ? '' : 'es'} marked optional by the planner</p> : null}
-    </section>
-  )
-}
-
-function FinalDecisionPanel({ finalDecisionDetails, activeRestrictions }) {
-  if (!finalDecisionDetails) return null
-
-  return (
-    <section className="final-decision-card" aria-label="final decision">
-      <p className="panel-eyebrow">final decision</p>
-      <h2>
-        {finalDecisionDetails.node_name ?? finalDecisionDetails.node?.name ?? 'decision'}: {finalDecisionDetails.decision}
-      </h2>
-      {finalDecisionDetails.reason ? <p>{finalDecisionDetails.reason}</p> : null}
-      {activeRestrictions.length ? (
-        <div className="restriction-note">
-          <strong>restrictions apply</strong>
-          <span>regimen, population, or monitoring restrictions are active.</span>
-          <ul>
-            {activeRestrictions.map((node) => (
-              <li key={node.id}>{node.name}</li>
-            ))}
-          </ul>
+    <div className="end-dialog-backdrop">
+      <section className="end-dialog" role="dialog" aria-modal="true" aria-labelledby="end-dialog-title">
+        <p className="panel-eyebrow" id="end-dialog-title">end exploration?</p>
+        {outlook ? <h3>{outlookHeadline(outlook)}</h3> : null}
+        <p>
+          {terminal
+            ? 'leaving returns you to scenario selection.'
+            : 'no final decision has been reached. ending now records neither GO nor NO-GO and leaves the evidence as it is.'}
+        </p>
+        <div className="end-dialog-actions">
+          <button type="button" className="text-button" onClick={onCancel} autoFocus>keep exploring</button>
+          <button type="button" className="run-button" onClick={onConfirm}>end and return to scenarios</button>
         </div>
-      ) : null}
-      {finalDecisionDetails.dependencies?.length ? (
-        <dl className="decision-dependencies">
-          {finalDecisionDetails.dependencies.map((dependency) => (
-            <div key={dependency.id}>
-              <dt>{dependency.name}</dt>
-              <dd>{dependency.status}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-    </section>
+      </section>
+    </div>
   )
 }
 
@@ -134,6 +99,7 @@ function ResearchWorkspace({
   previewScenario,
   previewFileName,
   onChangeScenario,
+  onEndExploration,
   onSubmitResult,
   onRevealHistoricalEvidence,
   selectedResult,
@@ -205,10 +171,12 @@ function ResearchWorkspace({
     ? (topRankedExperiment.node.downstream ?? []).map((id) => nodeById[id]).filter(Boolean)
     : []
   const roundNumber = (plannerState?.planner?.completed_experiment_ids?.length ?? 0) + 1
-  const finalDecisionDetails = isPreview
-    ? null
-    : plannerState.planner.final_decision_details
-      ?? plannerState.planner.final_decisions?.find((finalDecision) => finalDecision.decision === 'GO')
+  const outlook = isPreview ? null : plannerState.planner.decision_outlook ?? null
+  const historicalReplay = scenario.type === 'historical_replay'
+  const [endDialogOpen, setEndDialogOpen] = useState(false)
+  // Presentation only: minimized panels stay minimized across replans.
+  const [outlookMinimized, setOutlookMinimized] = useState(false)
+  const [questMinimized, setQuestMinimized] = useState(false)
   const activeRestrictions = isPreview
     ? []
     : (scenario.nodes ?? []).filter((node) => node.restriction_active)
@@ -224,15 +192,16 @@ function ResearchWorkspace({
 
   const updateVisible = !isPreview && Boolean(lastUpdate) && !updateDismissed
   useEffect(() => {
-    if (!detailsOpen && !updateVisible) return undefined
+    if (!detailsOpen && !updateVisible && !endDialogOpen) return undefined
     function onKeyDown(event) {
       if (event.key !== 'Escape') return
-      if (detailsOpen) setSelectedNodeId(null)
+      if (endDialogOpen) setEndDialogOpen(false)
+      else if (detailsOpen) setSelectedNodeId(null)
       else setDismissedUpdate(lastUpdate)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [detailsOpen, updateVisible, lastUpdate])
+  }, [detailsOpen, updateVisible, endDialogOpen, lastUpdate])
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -253,6 +222,9 @@ function ResearchWorkspace({
       <header className="app-header">
         <div className="header-left">
           <button type="button" className="text-button" onClick={onChangeScenario}>change scenario</button>
+          {!isPreview && (
+            <button type="button" className="text-button" onClick={() => setEndDialogOpen(true)}>end exploration</button>
+          )}
         </div>
 
         <div className="header-brand">
@@ -296,18 +268,23 @@ function ResearchWorkspace({
           <div className="graph-legend"><StatusLegend showProjected={projected.available} showMuted={mutedNodes.size > 0} /></div>
 
           {!isPreview && (
-            <StrategyPanel
-              projected={projected}
-              nodeById={nodeById}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={selectNode}
-              mutedCount={mutedNodes.size}
-            />
+            <div className="left-stack">
+              <ProgramOutlook
+                outlook={outlook}
+                plannerMessage={plannerState?.planner?.message}
+                activeRestrictions={activeRestrictions}
+                minimized={outlookMinimized}
+                onToggleMinimized={() => setOutlookMinimized((value) => !value)}
+              />
+            </div>
           )}
 
           <RecommendationPanel
             isPreview={isPreview}
             recommendation={topRankedExperiment}
+            rankedCount={isPreview ? 0 : plannerState.ranked_experiments.length}
+            minimized={questMinimized}
+            onToggleMinimized={() => setQuestMinimized((value) => !value)}
             plannerMessage={plannerState?.planner?.message}
             explanation={explanation}
             explanationLoading={explanationLoading}
@@ -321,28 +298,29 @@ function ResearchWorkspace({
             onRevealHistoricalEvidence={onRevealHistoricalEvidence}
             submitting={submitting}
             disabled={!topRankedExperiment}
-            historicalReplay={scenario.type === 'historical_replay'}
+            historicalReplay={historicalReplay}
             sessionTerminated={Boolean(plannerState?.planner?.terminated)}
           />
 
           {updateVisible && (
-            <UpdatePanel lastUpdate={lastUpdate} plannerState={plannerState} onDismiss={() => setDismissedUpdate(lastUpdate)} />
+            <UpdatePanel
+              lastUpdate={lastUpdate}
+              plannerState={plannerState}
+              historicalReplay={historicalReplay}
+              onDismiss={() => setDismissedUpdate(lastUpdate)}
+            />
           )}
           {!isPreview && lastUpdate && updateDismissed && (
             <button type="button" className="update-pill" onClick={() => setDismissedUpdate(null)}>view last update</button>
           )}
-          {!isPreview && (
-            <FinalDecisionPanel
-              finalDecisionDetails={finalDecisionDetails}
-              activeRestrictions={activeRestrictions}
-            />
-          )}
-          {plannerState?.planner?.terminated ? (
-            <p className="session-ended">
-              <strong>session terminated:</strong> {plannerState.planner.final_decision}
-            </p>
-          ) : null}
         </section>
+        {endDialogOpen && (
+          <EndExplorationDialog
+            outlook={outlook}
+            onCancel={() => setEndDialogOpen(false)}
+            onConfirm={() => { setEndDialogOpen(false); onEndExploration() }}
+          />
+        )}
 
         <aside ref={dockRef} className={`details-dock${detailsOpen ? ' is-open' : ''}`} aria-label="node details" aria-hidden={!detailsOpen}>
           <div className="details-dock-inner">

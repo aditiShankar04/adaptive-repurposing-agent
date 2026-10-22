@@ -1,17 +1,26 @@
-import { useRef, useState } from 'react'
-import useInert from '../hooks/useInert.js'
+import { useState } from 'react'
 
 function formatDecimal(value) {
   if (value === undefined || value === null || Number.isNaN(Number(value))) return 'n/a'
   return Number(value).toFixed(3)
 }
 
-function Stat({ label, value }) {
+// hint says what the number means, in plain words; it never adds a judgement the planner did not make.
+function Stat({ label, value, hint, className = '' }) {
   return (
-    <div className="stat">
+    <div className={`stat ${className}`}>
       <dt>{label}</dt>
       <dd className="mono">{value}</dd>
+      {hint ? <dd className="stat-hint">{hint}</dd> : null}
     </div>
+  )
+}
+
+function MinimizeButton({ label, onClick }) {
+  return (
+    <button type="button" className="panel-minimize" onClick={onClick} aria-label={label} title="minimize">
+      <span aria-hidden="true" />
+    </button>
   )
 }
 
@@ -20,9 +29,26 @@ function buildFallbackExplanation(recommendation) {
   return `${recommendation.experiment.name} ranked highest because the backend planner selected it for ${recommendation.node.name}, with uncertainty ${formatDecimal(metrics.uncertainty)}, marginal decision impact ${formatDecimal(metrics.marginal_decision_impact)}, discriminating power ${formatDecimal(metrics.discriminating_power)}, cost ${metrics.cost}, time ${metrics.time}, and score ${formatDecimal(metrics.score)}.`
 }
 
+function ScoreMath({ metrics }) {
+  return (
+    <div className="score-math">
+      <h3>how the score is built</h3>
+      <p className="score-equation mono">
+        <span><b>{formatDecimal(metrics.uncertainty)}</b> uncertainty</span>
+        <span>× <b>{formatDecimal(metrics.marginal_decision_impact)}</b> decision impact</span>
+        <span>× <b>{formatDecimal(metrics.discriminating_power)}</b> discriminating power</span>
+        <span>÷ (<b>{metrics.cost ?? 'n/a'}</b> cost × <b>{metrics.time ?? 'n/a'}</b> time)</span>
+        <span className="score-result">= <b>{formatDecimal(metrics.score)}</b> score</span>
+      </p>
+      <p className="score-note">scores only compare experiments with each other. the highest one becomes your next quest.</p>
+    </div>
+  )
+}
+
 function RecommendationPanel({
   isPreview,
   recommendation,
+  rankedCount = 0,
   plannerMessage,
   explanation,
   explanationLoading = false,
@@ -38,10 +64,21 @@ function RecommendationPanel({
   disabled,
   historicalReplay,
   sessionTerminated,
+  minimized = false,
+  onToggleMinimized,
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const moreRef = useRef(null)
-  useInert(moreRef, !expanded)
+  const [openSection, setOpenSection] = useState(null)
+  const toggleSection = (section) => setOpenSection((current) => (current === section ? null : section))
+
+  if (minimized && !isPreview) {
+    return (
+      <button type="button" className="panel-pill hud-pill" onClick={onToggleMinimized} aria-label="expand your next quest">
+        <span className="panel-pill-label">your next quest</span>
+        <span className="panel-pill-value">{recommendation ? recommendation.experiment.name : (plannerMessage ?? 'no eligible experiment')}</span>
+        <span className="panel-pill-expand" aria-hidden="true" />
+      </button>
+    )
+  }
 
   if (isPreview) {
     return (
@@ -55,6 +92,7 @@ function RecommendationPanel({
   if (!recommendation) {
     return (
       <section className="hud" aria-label="your next quest">
+        <MinimizeButton label="minimize your next quest" onClick={onToggleMinimized} />
         <p className="panel-eyebrow">your next quest</p>
         <p className="muted">{plannerMessage ?? 'no eligible experiment is currently available.'}</p>
       </section>
@@ -62,10 +100,13 @@ function RecommendationPanel({
   }
 
   const metrics = recommendation.metrics ?? {}
+  const locked = disabled || submitting || sessionTerminated
   const why = explanation || recommendation.explanation || recommendation.recommendation_explanation || buildFallbackExplanation(recommendation)
+  const rank = recommendation.rank ?? 1
 
   return (
     <section key={recommendation.experiment.id} className="hud hud-refresh" aria-label="your next quest">
+      <MinimizeButton label="minimize your next quest" onClick={onToggleMinimized} />
       <p className="panel-eyebrow">your next quest</p>
       <p className="hud-descriptor">backend recommendation</p>
       <h2 className="recommendation-title">{recommendation.experiment.name}</h2>
@@ -77,33 +118,55 @@ function RecommendationPanel({
       </p>
 
       <dl className="hud-primary">
-        <Stat label="decision impact" value={formatDecimal(metrics.marginal_decision_impact)} />
-        <div className="stat stat-score">
-          <dt>score</dt>
-          <dd className="mono">{formatDecimal(metrics.score)}</dd>
-        </div>
+        <Stat
+          label="decision impact"
+          value={formatDecimal(metrics.marginal_decision_impact)}
+          hint="how much the result could change the path to a decision (0–1)"
+        />
+        <Stat
+          className="stat-score"
+          label="score"
+          value={formatDecimal(metrics.score)}
+          hint={rankedCount > 1 ? `ranked #${rank} of ${rankedCount} candidate experiments` : 'the only candidate experiment'}
+        />
       </dl>
 
-      <button
-        type="button"
-        className="hud-toggle"
-        aria-expanded={expanded}
-        aria-controls="hud-more"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span>{expanded ? 'hide details' : 'details · why this path?'}</span>
-        <span className="hud-chevron" aria-hidden="true" />
-      </button>
+      <div className="hud-tabs" role="group" aria-label="more about this recommendation">
+        <button
+          type="button"
+          className={`hud-tab${openSection === 'details' ? ' is-active' : ''}`}
+          aria-expanded={openSection === 'details'}
+          aria-controls="hud-details"
+          onClick={() => toggleSection('details')}
+        >
+          <span className="hud-tab-icon" aria-hidden="true">#</span>
+          details
+          <span className="hud-chevron" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className={`hud-tab${openSection === 'why' ? ' is-active' : ''}`}
+          aria-expanded={openSection === 'why'}
+          aria-controls="hud-why"
+          onClick={() => toggleSection('why')}
+        >
+          <span className="hud-tab-icon" aria-hidden="true">?</span>
+          why this path?
+          <span className="hud-chevron" aria-hidden="true" />
+        </button>
+      </div>
 
-      <div ref={moreRef} id="hud-more" className={`hud-more${expanded ? ' is-open' : ''}`}>
-        <div className="hud-more-inner">
+      {openSection === 'details' && (
+        <div id="hud-details" className="hud-section">
           <dl className="hud-secondary">
-            <Stat label="uncertainty" value={formatDecimal(metrics.uncertainty)} />
-            <Stat label="downstream impact" value={metrics.downstream_impact ?? 'n/a'} />
-            <Stat label="discriminating power" value={formatDecimal(metrics.discriminating_power)} />
-            <Stat label="cost" value={metrics.cost ?? 'n/a'} />
-            <Stat label="time" value={metrics.time ?? 'n/a'} />
+            <Stat label="uncertainty" value={formatDecimal(metrics.uncertainty)} hint="1 − confidence in the tested node" />
+            <Stat label="discriminating power" value={formatDecimal(metrics.discriminating_power)} hint="how cleanly it separates yes from no" />
+            <Stat label="cost" value={metrics.cost ?? 'n/a'} hint="relative, 1 (low) to 5 (high)" />
+            <Stat label="time" value={metrics.time ?? 'n/a'} hint="relative, 1 (fast) to 5 (slow)" />
+            <Stat label="downstream impact" value={metrics.downstream_impact ?? 'n/a'} hint="nodes that depend on this one (not in the score)" />
           </dl>
+
+          <ScoreMath metrics={metrics} />
 
           {unlockedNodes.length > 0 && (
             <p className="unlocks">
@@ -115,47 +178,58 @@ function RecommendationPanel({
               ))}
             </p>
           )}
+        </div>
+      )}
 
-          <div className="why">
-            <h3>why this path?</h3>
-            {explanationLoading ? (
-              <p className="why-loading" role="status" aria-live="polite">interpreting planner reasoning<span className="why-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p>
-            ) : (
-              <p>{why}</p>
-            )}
-          </div>
-
-          {historicalReplay ? (
-            <div className="run-control">
-              <button type="button" className="run-button" disabled={disabled || submitting || sessionTerminated} onClick={onRevealHistoricalEvidence}>
-                {submitting ? 'revealing...' : 'reveal historical outcome'}
-              </button>
-            </div>
+      {openSection === 'why' && (
+        <div id="hud-why" className="hud-section why">
+          <h3>why the planner picked this experiment</h3>
+          {explanationLoading ? (
+            <p className="why-loading" role="status" aria-live="polite">interpreting planner reasoning<span className="why-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p>
           ) : (
-            <form className="outcome-form" onSubmit={onSubmitResult}>
-              <h3>outcome</h3>
-              <label>
-                <span>result</span>
-                <select value={selectedResult} onChange={(event) => onResultChange(event.target.value)} disabled={disabled || submitting || sessionTerminated}>
-                  <option value="positive">positive</option>
-                  <option value="negative">negative</option>
-                  <option value="inconclusive">inconclusive</option>
-                </select>
-              </label>
-              <label>
-                <span>qc</span>
-                <select value={selectedQc} onChange={(event) => onQcChange(event.target.value)} disabled={disabled || submitting || sessionTerminated}>
-                  <option value="pass">pass</option>
-                  <option value="questionable">questionable</option>
-                  <option value="fail">fail</option>
-                </select>
-              </label>
-              <button type="submit" className="run-button" disabled={disabled || submitting || sessionTerminated}>
-                {submitting ? 'applying...' : 'record outcome'}
-              </button>
-            </form>
+            <p>{why}</p>
           )}
         </div>
+      )}
+
+      {/* Each recommendation takes exactly one result: explored or (historical scenarios only) revealed. */}
+      <div className="outcome-actions">
+        <form className="outcome-form" onSubmit={onSubmitResult}>
+          <h3>explore an outcome</h3>
+          <p className="action-note">enter an outcome and see how labyrinth adapts.</p>
+          <label>
+            <span>result</span>
+            <select value={selectedResult} onChange={(event) => onResultChange(event.target.value)} disabled={locked}>
+              <option value="positive">supports hypothesis</option>
+              <option value="negative">contradicts hypothesis</option>
+              <option value="inconclusive">inconclusive</option>
+            </select>
+          </label>
+          <label>
+            <span>qc</span>
+            <select value={selectedQc} onChange={(event) => onQcChange(event.target.value)} disabled={locked}>
+              <option value="pass">pass</option>
+              <option value="questionable">questionable</option>
+              <option value="fail">fail</option>
+            </select>
+          </label>
+          <button type="submit" className="run-button" disabled={locked}>
+            {submitting ? 'applying...' : 'submit result'}
+          </button>
+        </form>
+
+        {historicalReplay && (
+          <>
+            <p className="action-divider"><span>or</span></p>
+            <div className="run-control">
+              <h3>replay history</h3>
+              <p className="action-note">reveal what was actually observed for this experiment.</p>
+              <button type="button" className="run-button run-button-secondary" disabled={locked} onClick={onRevealHistoricalEvidence}>
+                {submitting ? 'applying...' : 'reveal historical result'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </section>
   )
