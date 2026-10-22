@@ -30,6 +30,7 @@ SCENARIO_FILES = {
     "propranolol": PROJECT_ROOT / "data" / "propranolol-scenario-v2.json",
     "propranolol-v1": PROJECT_ROOT / "data" / "propranolol-scenario.json",
     "xanomeline": PROJECT_ROOT / "data" / "xanomeline-pdp-scenario.json",
+    "sildenafil": PROJECT_ROOT / "data" / "sildenafil-fgr-scenario.json",
 }
 
 sessions = {}
@@ -369,12 +370,12 @@ def main():
     server = ThreadingHTTPServer((HOST, PORT), PlannerRequestHandler)
     print("Planner API running at http://" + HOST + ":" + str(PORT))
     print("Available endpoints:")
-    print("  GET  /api/planner?scenario=demo|propranolol|propranolol-v1|xanomeline")
+    print("  GET  /api/planner?scenario=demo|propranolol|propranolol-v1|xanomeline|sildenafil")
     print("  POST /api/sessions")
     print("  GET  /api/sessions/{session_id}")
     print("  POST /api/sessions/{session_id}/result")
     print("  POST /api/sessions/{session_id}/reveal-historical-result")
-    print("  GET  /api/explain?scenario=demo|propranolol|propranolol-v1|xanomeline")
+    print("  GET  /api/explain?scenario=demo|propranolol|propranolol-v1|xanomeline|sildenafil")
     server.serve_forever()
 
 

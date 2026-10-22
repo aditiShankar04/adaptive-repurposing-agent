@@ -23,6 +23,7 @@ const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms) })
 const scenarioSamples = [
   { key: 'propranolol', label: 'propranolol', title: 'Propranolol historical replay' },
   { key: 'xanomeline', label: 'xanomeline', title: 'Xanomeline PDP scenario' },
+  { key: 'sildenafil', label: 'sildenafil', title: 'Sildenafil FGR historical replay' },
   { key: 'demo', label: 'demo', title: 'Demo scenario' },
 ]
 

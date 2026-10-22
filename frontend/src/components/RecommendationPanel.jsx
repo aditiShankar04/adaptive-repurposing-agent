@@ -101,6 +101,8 @@ function RecommendationPanel({
 
   const metrics = recommendation.metrics ?? {}
   const locked = disabled || submitting || sessionTerminated
+  // Visible scenario flag: illustrative experiments say outright that no history exists.
+  const historyAvailable = recommendation.experiment.historical_result_available !== false
   const why = explanation || recommendation.explanation || recommendation.recommendation_explanation || buildFallbackExplanation(recommendation)
   const rank = recommendation.rank ?? 1
 
@@ -225,8 +227,12 @@ function RecommendationPanel({
             <p className="action-divider"><span>or</span></p>
             <div className="run-control">
               <h3>replay history</h3>
-              <p className="action-note">reveal what was actually observed for this experiment.</p>
-              <button type="button" className="run-button run-button-secondary" disabled={locked} onClick={onRevealHistoricalEvidence}>
+              {historyAvailable ? (
+                <p className="action-note">reveal what was actually observed for this experiment.</p>
+              ) : (
+                <p className="action-note">no historical record exists for this experiment. explore an outcome instead.</p>
+              )}
+              <button type="button" className="run-button run-button-secondary" disabled={locked || !historyAvailable} onClick={onRevealHistoricalEvidence}>
                 {submitting ? 'applying...' : 'reveal historical result'}
               </button>
             </div>
