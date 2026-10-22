@@ -1,10 +1,10 @@
-# LABYRINTH
+# labyrinth
 
 **Adaptive experimental navigation for evidence-driven drug repurposing**
 
-LABYRINTH is an interactive research-planning system designed to help scientists decide **what experiment matters next** during drug-repurposing programs.
+labyrinth is an interactive research-planning system designed to help scientists decide **what experiment matters next** during drug-repurposing programs.
 
-Rather than treating experimental planning as a fixed checklist, LABYRINTH represents a scientific program as an evidence graph, updates that graph as experimental results arrive, and continuously reranks eligible experiments according to their expected value for reaching a decision.
+Rather than treating experimental planning as a fixed checklist, labyrinth represents a scientific program as an evidence graph, updates that graph as experimental results arrive, and continuously reranks eligible experiments according to their expected value for reaching a decision.
 
 The product combines a **deterministic planning engine**, an interactive evidence-map interface, and an **LLM explanation layer**. The deterministic planner remains the source of truth for experiment ranking and decision logic; the LLM explains the planner's recommendation in scientist-facing language without choosing or reranking experiments.
 
@@ -23,7 +23,7 @@ This creates several practical questions:
 - How can a scientist understand **why** the planner prefers one experiment over another?
 - How can historical programs be replayed without leaking known outcomes into the planning algorithm?
 
-LABYRINTH was built to explore these questions through an adaptive, evidence-driven planning workflow.
+labyrinth was built to explore these questions through an adaptive, evidence-driven planning workflow.
 
 Instead of asking researchers to complete every possible experiment, the long-term goal is to identify the **minimum useful evidence path toward a scientifically justified decision**, while retaining alternative branches when the evidence changes.
 
@@ -31,7 +31,7 @@ Instead of asking researchers to complete every possible experiment, the long-te
 
 ## Product Description
 
-LABYRINTH models a research program as a directed evidence graph.
+labyrinth models a research program as a directed evidence graph.
 
 ### Nodes
 
@@ -53,7 +53,7 @@ For example:
 - `all` means all required prerequisite gates must be supported.
 - `any` means at least one prerequisite path can be sufficient.
 
-This allows LABYRINTH to represent both mandatory evidence gates and alternative mechanistic routes.
+This allows labyrinth to represent both mandatory evidence gates and alternative mechanistic routes.
 
 ### Experiments
 
@@ -79,7 +79,7 @@ Depending on the scenario and result, an experiment can:
 
 ### Adaptive Planning Loop
 
-A typical LABYRINTH session follows this loop:
+A typical labyrinth session follows this loop:
 
 1. Load a research scenario.
 2. Evaluate the current evidence graph.
@@ -100,7 +100,7 @@ The interface visualizes this process as a living evidence map rather than a sta
 
 ### Interactive Evidence Map
 
-LABYRINTH renders scientific hypotheses and dependencies as an interactive graph.
+labyrinth renders scientific hypotheses and dependencies as an interactive graph.
 
 Researchers can inspect individual nodes and view:
 
@@ -125,7 +125,7 @@ The frontend presents this as the user's **Next Best Experiment** or **Next Ques
 
 ### Adaptive Reranking
 
-After each experimental result, LABYRINTH updates the scientific state and reruns the planner.
+After each experimental result, labyrinth updates the scientific state and reruns the planner.
 
 A result can therefore change:
 
@@ -145,7 +145,7 @@ The experimental strategy is therefore adaptive rather than predetermined.
 
 ### Historical Evidence Replay
 
-Historical-replay scenarios allow LABYRINTH to plan without seeing hidden known outcomes.
+Historical-replay scenarios allow labyrinth to plan without seeing hidden known outcomes.
 
 Only after the planner selects an experiment is the corresponding historical evidence revealed and applied.
 
@@ -173,7 +173,7 @@ The planner then determines whether the scientific state should update or whethe
 
 ### QC-Aware Evidence Handling
 
-LABYRINTH distinguishes experimental outcome from evidence quality.
+labyrinth distinguishes experimental outcome from evidence quality.
 
 Questionable or failed QC does not automatically change the scientific graph.
 
@@ -199,7 +199,7 @@ The planner can also identify situations where no useful experiments remain or w
 
 ### LLM Recommendation Explanations
 
-LABYRINTH includes a Groq/Qwen-powered explanation layer.
+labyrinth includes a Groq/Qwen-powered explanation layer.
 
 Importantly, the LLM **does not make the planning decision**.
 
@@ -219,7 +219,7 @@ Scientist-facing "Why this experiment?" explanation
 
 The deterministic planner selects the experiment first. The LLM receives a constrained representation of that planner output and translates it into a concise explanation.
 
-If the external LLM is unavailable, LABYRINTH falls back to a deterministic explanation so that the core planner remains usable.
+If the external LLM is unavailable, labyrinth falls back to a deterministic explanation so that the core planner remains usable.
 
 ---
 
@@ -232,7 +232,7 @@ The frontend supports:
 - Scenario validation
 - Uploaded scenario preview
 
-This allows LABYRINTH to eventually support additional drug-repurposing and experimental-planning programs.
+This allows labyrinth to eventually support additional drug-repurposing and experimental-planning programs.
 
 ---
 
@@ -253,7 +253,7 @@ The frontend includes:
 
 ## Planner Calculations
 
-LABYRINTH uses deterministic calculations to prioritize experiments.
+labyrinth uses deterministic calculations to prioritize experiments.
 
 These calculations are intended to make experiment selection traceable rather than delegating experimental planning to an LLM.
 
@@ -296,7 +296,7 @@ This metric represents the structural reach of the node within the evidence grap
 
 ### 3. Marginal Decision Impact
 
-LABYRINTH estimates how differently the research program would evolve under hypothetical **positive** versus **negative** outcomes for an experiment.
+labyrinth estimates how differently the research program would evolve under hypothetical **positive** versus **negative** outcomes for an experiment.
 
 For each hypothetical outcome, the planner simulates the resulting program state.
 
@@ -395,7 +395,7 @@ This prevents a high numerical score from automatically overriding scientific gr
 
 ## Results
 
-The current LABYRINTH implementation demonstrates an end-to-end adaptive experimental-planning workflow across built-in drug-repurposing scenarios.
+The current labyrinth implementation demonstrates an end-to-end adaptive experimental-planning workflow across built-in drug-repurposing scenarios.
 
 The system can currently:
 
@@ -421,7 +421,7 @@ The Propranolol historical-replay scenario, for example, demonstrates a graph co
 
 The planner uses experimental outcomes to update this graph and adapt subsequent recommendations.
 
-LABYRINTH should currently be considered a **research prototype**, not a validated autonomous drug-development decision system.
+labyrinth should currently be considered a **research prototype**, not a validated autonomous drug-development decision system.
 
 Formal benchmarking of recommendation quality, decision efficiency, robustness, and generalization across research programs remains future work.
 
@@ -521,13 +521,13 @@ The system should distinguish between:
 - Blocked experiments
 - Branches made irrelevant by accumulated evidence
 
-This would move LABYRINTH closer to its goal of identifying the **smallest useful evidence set required for a decision** rather than resolving every possible hypothesis.
+This would move labyrinth closer to its goal of identifying the **smallest useful evidence set required for a decision** rather than resolving every possible hypothesis.
 
 ---
 
 ### Formal Planner Evaluation
 
-Future work should benchmark LABYRINTH using metrics such as:
+Future work should benchmark labyrinth using metrics such as:
 
 - Number of experiments required to reach a correct decision
 - Cumulative experimental cost
@@ -605,7 +605,7 @@ Future decision states could extend beyond basic GO / NO-GO / MORE EVIDENCE to r
 
 ### Broader Applications
 
-Although LABYRINTH is currently framed around adaptive drug-repurposing research, the underlying approach could be applied to other sequential evidence-generation problems, including:
+Although labyrinth is currently framed around adaptive drug-repurposing research, the underlying approach could be applied to other sequential evidence-generation problems, including:
 
 - Target validation
 - Mechanism-of-action studies
@@ -655,7 +655,7 @@ This would improve scientific auditability while preserving the separation betwe
 
 ## Project Status
 
-LABYRINTH is under active development.
+labyrinth is under active development.
 
 Current development priorities include:
 
@@ -670,6 +670,6 @@ Current development priorities include:
 
 ## Disclaimer
 
-LABYRINTH is a research and software prototype.
+labyrinth is a research and software prototype.
 
 It is not a medical device and should not be used as a substitute for scientific, clinical, regulatory, or drug-development judgment.
