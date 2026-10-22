@@ -474,6 +474,98 @@ def classify_decision_path_role_in_state(scenario_state, experiment):
     }
 
 
+def serialize_node_for_outlook(node):
+    return {
+        "id": node["id"],
+        "name": node["name"],
+        "status": node["status"],
+    }
+
+
+def get_final_decision_dependency_ids_in_state(scenario_state):
+    dependency_ids = set()
+
+    for final_decision_node in get_final_decision_nodes_in_state(scenario_state):
+        dependency_ids.update(final_decision_node["depends_on"])
+
+    return dependency_ids
+
+
+def serialize_nodes_by_id_for_outlook(scenario_state, node_ids):
+    return [
+        serialize_node_for_outlook(find_node_in_state(scenario_state, node_id))
+        for node_id in sorted(node_ids)
+    ]
+
+
+def build_decision_outlook(
+    scenario_state,
+    final_decisions,
+    final_decision_details,
+    planner_status,
+    terminated=False,
+    final_decision=None,
+):
+    final_decision_dependency_ids = get_final_decision_dependency_ids_in_state(
+        scenario_state,
+    )
+    supported_required_gate_ids = {
+        node_id
+        for node_id in final_decision_dependency_ids
+        if find_node_in_state(scenario_state, node_id)["status"] == "supported"
+    }
+    unresolved_required_gate_ids = {
+        node_id
+        for node_id in final_decision_dependency_ids
+        if find_node_in_state(scenario_state, node_id)["status"] != "supported"
+    }
+    current_blocker_ids = get_required_blocker_node_ids_in_state(scenario_state)
+    no_go_reached = terminated and final_decision == "NO-GO"
+    go_reachable = (
+        not no_go_reached
+        and any(
+            is_node_potentially_satisfiable_in_state(scenario_state, final_decision_node)
+            for final_decision_node in get_final_decision_nodes_in_state(scenario_state)
+        )
+    )
+
+    if no_go_reached:
+        state = "no_go"
+        outlook_final_decision = "NO-GO"
+        outlook_final_decision_details = None
+    elif final_decision_details is not None:
+        state = "final_decision_reached"
+        outlook_final_decision = final_decision_details["decision"]
+        outlook_final_decision_details = final_decision_details
+    elif planner_status == "dead_end_more_evidence":
+        state = "dead_end_more_evidence"
+        outlook_final_decision = None
+        outlook_final_decision_details = None
+    else:
+        state = "more_evidence_required"
+        outlook_final_decision = None
+        outlook_final_decision_details = None
+
+    return {
+        "state": state,
+        "go_reachable": go_reachable,
+        "final_decision": outlook_final_decision,
+        "final_decision_details": outlook_final_decision_details,
+        "supported_required_gates": serialize_nodes_by_id_for_outlook(
+            scenario_state,
+            supported_required_gate_ids,
+        ),
+        "unresolved_required_gates": serialize_nodes_by_id_for_outlook(
+            scenario_state,
+            unresolved_required_gate_ids,
+        ),
+        "current_blockers": serialize_nodes_by_id_for_outlook(
+            scenario_state,
+            current_blocker_ids,
+        ),
+    }
+
+
 def rank_experiment_scores_with_zero_fallback(scenario_state, experiment_scores):
     annotated_scores = []
 
@@ -2044,6 +2136,15 @@ def get_planner_state(
         planner_status = "ok"
         planner_message = None
 
+    decision_outlook = build_decision_outlook(
+        scenario_state,
+        final_decisions,
+        final_decision_details,
+        planner_status,
+        terminated=terminated,
+        final_decision=final_decision,
+    )
+
     return {
         "scenario": {
             "key": scenario_key,
@@ -2060,6 +2161,7 @@ def get_planner_state(
         "planner": {
             "status": planner_status,
             "message": planner_message,
+            "decision_outlook": decision_outlook,
             "final_decisions": final_decisions,
             "final_decision_details": final_decision_details,
             "unreachable_dependencies": unreachable_dependencies,
