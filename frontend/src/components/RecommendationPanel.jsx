@@ -25,6 +25,7 @@ function RecommendationPanel({
   recommendation,
   plannerMessage,
   explanation,
+  explanationLoading = false,
   unlockedNodes,
   onSelectNode,
   selectedResult,
@@ -64,7 +65,7 @@ function RecommendationPanel({
   const why = explanation || recommendation.explanation || recommendation.recommendation_explanation || buildFallbackExplanation(recommendation)
 
   return (
-    <section className="hud" aria-label="your next quest">
+    <section key={recommendation.experiment.id} className="hud hud-refresh" aria-label="your next quest">
       <p className="panel-eyebrow">your next quest</p>
       <p className="hud-descriptor">backend recommendation</p>
       <h2 className="recommendation-title">{recommendation.experiment.name}</h2>
@@ -117,7 +118,11 @@ function RecommendationPanel({
 
           <div className="why">
             <h3>why this path?</h3>
-            <p>{why}</p>
+            {explanationLoading ? (
+              <p className="why-loading" role="status" aria-live="polite">interpreting planner reasoning<span className="why-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p>
+            ) : (
+              <p>{why}</p>
+            )}
           </div>
 
           {historicalReplay ? (

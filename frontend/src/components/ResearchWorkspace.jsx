@@ -8,6 +8,7 @@ import RecommendationPanel from './RecommendationPanel.jsx'
 import StatusLegend from './StatusLegend.jsx'
 import Wordmark from './Wordmark.jsx'
 import { createGraphEdges, createGraphNodes } from '../graph.js'
+import { getBackendMutedNodes, getEvidenceChange, getProjectedPath } from '../plannerPaths.js'
 import useInert from '../hooks/useInert.js'
 import useReducedMotion from '../hooks/useReducedMotion.js'
 
@@ -19,7 +20,7 @@ function formatConfidence(confidence) {
   return `${Math.round(confidence * 100)}%`
 }
 
-function UpdatePanel({ lastUpdate, plannerState }) {
+function UpdatePanel({ lastUpdate, plannerState, onDismiss }) {
   if (!lastUpdate) return null
 
   const historicalEvidence = lastUpdate.historical_evidence
@@ -27,7 +28,10 @@ function UpdatePanel({ lastUpdate, plannerState }) {
   const newRecommendation = plannerState.ranked_experiments[0]
 
   return (
-    <section className="update-panel">
+    <section className="update-panel" aria-label={historicalEvidence ? 'historical outcome' : 'last update'}>
+      <button type="button" className="panel-close" onClick={onDismiss} aria-label="close this update (the planner state is kept)">
+        <span aria-hidden="true">×</span>
+      </button>
       <p className="panel-eyebrow">{historicalEvidence ? 'historical replay' : 'last update'}</p>
       <h3>{displayedUpdate.experiment.name}</h3>
       {historicalEvidence ? (
@@ -52,6 +56,38 @@ function UpdatePanel({ lastUpdate, plannerState }) {
       {displayedUpdate.update_details.confirmed_failure ? <p><strong>confirmed failure: {displayedUpdate.update_details.confirmed_action}</strong></p> : null}
       {displayedUpdate.update_details.final_decision ? <p><strong>final decision: {displayedUpdate.update_details.final_decision}</strong></p> : null}
       {newRecommendation ? <p>new quest: <strong>{newRecommendation.experiment.name}</strong></p> : null}
+    </section>
+  )
+}
+
+function StrategyPanel({ projected, nodeById, selectedNodeId, onSelectNode, mutedCount }) {
+  const shown = projected.orderedIds.filter((id) => nodeById[id])
+  return (
+    <section className="strategy-panel" aria-label="current projected path">
+      <p className="panel-eyebrow">current strategy</p>
+      {projected.available && shown.length ? <h3>current projected path</h3> : null}
+      {projected.available && shown.length ? (
+        <>
+          <p className="strategy-basis">based on current evidence</p>
+          <ol className="strategy-chain">
+            {shown.map((id) => (
+              <li key={id}>
+                <button
+                  type="button"
+                  className={`strategy-chip${selectedNodeId === id ? ' is-selected' : ''}`}
+                  onClick={() => onSelectNode(id)}
+                >
+                  {nodeById[id].name}
+                </button>
+              </li>
+            ))}
+          </ol>
+          {projected.summary ? <p className="strategy-summary">{projected.summary}</p> : null}
+        </>
+      ) : (
+        <p className="strategy-empty">current projected path: not provided by the planner yet.</p>
+      )}
+      {mutedCount ? <p className="strategy-muted">{mutedCount} branch{mutedCount === 1 ? '' : 'es'} marked optional by the planner</p> : null}
     </section>
   )
 }
@@ -128,13 +164,38 @@ function ResearchWorkspace({
     () => new Set((scenario.nodes ?? []).filter((node) => node.status === 'contradicted').map((node) => node.id)),
     [scenario],
   )
+  // Read-only views of what the backend reports. Nothing here is computed or inferred.
+  const projected = useMemo(() => getProjectedPath(isPreview ? null : plannerState), [isPreview, plannerState])
+  const mutedNodes = useMemo(() => getBackendMutedNodes(isPreview ? null : plannerState), [isPreview, plannerState])
+
+  // Brief emphasis on the node the last result changed.
+  const [change, setChange] = useState(null)
+  useEffect(() => {
+    const next = lastUpdate ? getEvidenceChange(lastUpdate) : null
+    if (!next || !next.nodeId) {
+      setChange(null)
+      return undefined
+    }
+    setChange({ ...next, key: `${next.nodeId}-${Date.now()}` })
+    const timer = setTimeout(() => setChange(null), reduced ? 4000 : 3600)
+    return () => clearTimeout(timer)
+  }, [lastUpdate, reduced])
+
+  // Close control for the outcome / update card: frontend presentation only.
+  const [dismissedUpdate, setDismissedUpdate] = useState(null)
+  const updateDismissed = Boolean(lastUpdate) && dismissedUpdate === lastUpdate
+
   const graphNodes = useMemo(
-    () => createGraphNodes(scenario.nodes ?? [], recommendedNodeId, selectedNodeId, weakNodeIds),
-    [scenario, recommendedNodeId, selectedNodeId, weakNodeIds],
+    () => createGraphNodes(scenario.nodes ?? [], recommendedNodeId, selectedNodeId, {
+      weakNodeIds, projectedNodeIds: projected.nodeIds, mutedNodes, change,
+    }),
+    [scenario, recommendedNodeId, selectedNodeId, weakNodeIds, projected, mutedNodes, change],
   )
   const graphEdges = useMemo(
-    () => createGraphEdges(scenario.nodes ?? [], recommendedNodeId, selectedNodeId, weakNodeIds),
-    [scenario, recommendedNodeId, selectedNodeId, weakNodeIds],
+    () => createGraphEdges(scenario.nodes ?? [], recommendedNodeId, selectedNodeId, {
+      weakNodeIds, projectedEdgeKeys: projected.edgeKeys, mutedNodes, change,
+    }),
+    [scenario, recommendedNodeId, selectedNodeId, weakNodeIds, projected, mutedNodes, change],
   )
   const shownNode = nodeById[selectedNodeId ?? lastShownId]
   const shownExperiments = shownNode
@@ -161,14 +222,17 @@ function ResearchWorkspace({
     setSelectedNodeId(null)
   }
 
+  const updateVisible = !isPreview && Boolean(lastUpdate) && !updateDismissed
   useEffect(() => {
-    if (!detailsOpen) return undefined
+    if (!detailsOpen && !updateVisible) return undefined
     function onKeyDown(event) {
-      if (event.key === 'Escape') setSelectedNodeId(null)
+      if (event.key !== 'Escape') return
+      if (detailsOpen) setSelectedNodeId(null)
+      else setDismissedUpdate(lastUpdate)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [detailsOpen])
+  }, [detailsOpen, updateVisible, lastUpdate])
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -189,10 +253,10 @@ function ResearchWorkspace({
       <header className="app-header">
         <div className="header-left">
           <button type="button" className="text-button" onClick={onChangeScenario}>change scenario</button>
-          <div className="brand">
-            <Wordmark size="sm" />
-            <span className="brand-tagline">navigate the maze of discovery.</span>
-          </div>
+        </div>
+
+        <div className="header-brand">
+          <Wordmark size="sm" />
         </div>
 
         <div className="context">
@@ -229,13 +293,24 @@ function ResearchWorkspace({
             <span>evidence map</span>
             <span className="mono">research round {String(roundNumber).padStart(2, '0')}</span>
           </p>
-          <div className="graph-legend"><StatusLegend /></div>
+          <div className="graph-legend"><StatusLegend showProjected={projected.available} showMuted={mutedNodes.size > 0} /></div>
+
+          {!isPreview && (
+            <StrategyPanel
+              projected={projected}
+              nodeById={nodeById}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={selectNode}
+              mutedCount={mutedNodes.size}
+            />
+          )}
 
           <RecommendationPanel
             isPreview={isPreview}
             recommendation={topRankedExperiment}
             plannerMessage={plannerState?.planner?.message}
             explanation={explanation}
+            explanationLoading={explanationLoading}
             unlockedNodes={unlockedNodes}
             onSelectNode={selectNode}
             selectedResult={selectedResult}
@@ -250,7 +325,12 @@ function ResearchWorkspace({
             sessionTerminated={Boolean(plannerState?.planner?.terminated)}
           />
 
-          {!isPreview && <UpdatePanel lastUpdate={lastUpdate} plannerState={plannerState} />}
+          {updateVisible && (
+            <UpdatePanel lastUpdate={lastUpdate} plannerState={plannerState} onDismiss={() => setDismissedUpdate(lastUpdate)} />
+          )}
+          {!isPreview && lastUpdate && updateDismissed && (
+            <button type="button" className="update-pill" onClick={() => setDismissedUpdate(null)}>view last update</button>
+          )}
           {!isPreview && (
             <FinalDecisionPanel
               finalDecisionDetails={finalDecisionDetails}

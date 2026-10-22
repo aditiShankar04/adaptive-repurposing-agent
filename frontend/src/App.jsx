@@ -10,7 +10,7 @@ import ScenarioValidation from './components/ScenarioValidation.jsx'
 import useReducedMotion from './hooks/useReducedMotion.js'
 import { readScenarioFile } from './scenarioValidation.js'
 
-const LEAVE_MS = 420
+const LEAVE_MS = 380
 const MIN_VALIDATING_MS = 400
 const ENVIRONMENT_STAGE = {
   landing: 'landing',
@@ -32,6 +32,8 @@ function App() {
   const [pendingScreen, setPendingScreen] = useState(null)
   const [sweepToken, setSweepToken] = useState(0)
   const [introPlayed, setIntroPlayed] = useState(false)
+  const screenRef = useRef('landing')
+  const navigating = useRef(false)
   const [sessionId, setSessionId] = useState(null)
   const [plannerState, setPlannerState] = useState(null)
   const [previewScenario, setPreviewScenario] = useState(null)
@@ -105,18 +107,27 @@ function App() {
   }
 
   function go(next) {
-    if (pendingScreen) return
-    if (screen === 'landing') setIntroPlayed(true)
+    // Ref-based lock: a second click during the leave animation can never start another swap.
+    if (navigating.current) return
+    const from = screenRef.current
     if (reduced) {
+      if (from === 'landing') setIntroPlayed(true)
+      screenRef.current = next
       setScreen(next)
       return
     }
+    navigating.current = true
     setPendingScreen(next)
-    if (screen === 'landing' && next === 'scenario-select') setSweepToken((token) => token + 1)
+    if (from === 'landing' && next === 'scenario-select') setSweepToken((token) => token + 1)
+    // The swap happens only after the leave animation has fully finished (opacity 0), and
+    // the environment keeps running underneath, so nothing resets or overlaps.
     later(() => {
+      if (from === 'landing') setIntroPlayed(true)
+      screenRef.current = next
       setScreen(next)
       setPendingScreen(null)
-    }, LEAVE_MS)
+      navigating.current = false
+    }, LEAVE_MS + 40)
   }
 
   async function createBackendSession(scenarioKey) {

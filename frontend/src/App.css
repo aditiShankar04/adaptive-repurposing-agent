@@ -1,7 +1,8 @@
 .app-shell { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100svh; min-height: 620px; padding: 18px 0 0; gap: 10px; }
 .app-header, .workspace { position: relative; z-index: 1; }
-.app-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding: 0 28px; }
-.header-left { display: flex; flex-direction: column; gap: 8px; }
+.app-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; padding: 0 28px; }
+.header-brand { display: flex; justify-content: center; }
+.header-left { display: flex; align-items: center; justify-content: flex-start; }
 .brand { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 .brand-tagline { font-family: var(--font-body); font-size: 12.5px; letter-spacing: 0.02em; color: var(--ink-on-dark-muted); }
 .context { min-width: 0; text-align: right; }
@@ -209,8 +210,10 @@
 }
 
 @media (max-width: 1100px) {
-  .app-header { align-items: flex-start; flex-direction: column; gap: 10px; }
-  .context { text-align: left; }
+  .app-header { grid-template-columns: 1fr auto; grid-template-areas: 'left brand' 'ctx ctx'; gap: 6px 16px; }
+  .header-left { grid-area: left; }
+  .header-brand { grid-area: brand; }
+  .context { grid-area: ctx; text-align: left; }
   .context-goal { margin-left: 0; }
   .graph-legend { max-width: calc(100% - 340px); }
   .hud { width: min(300px, calc(100% - 36px)); }
@@ -223,11 +226,67 @@
   .details-dock { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: 0; }
   .details-dock.is-open { width: min(400px, 92vw); }
   .details-dock-inner { width: min(400px, 92vw); padding-top: 18px; background: var(--page); }
-  .update-panel, .session-ended, .workspace-error, .final-decision-card { display: none; }
+  .update-panel, .update-pill, .strategy-panel, .session-ended, .workspace-error, .final-decision-card { display: none; }
   .graph-legend { display: none; }
 }
 
+/* ---------- Strategy, adaptation, muting (all driven by backend data) ---------- */
+
+.waypoint.is-projected .waypoint-orb::before { content: ''; position: absolute; inset: -7px; border: 1.5px solid #6a4bc9; border-radius: 50%; opacity: 0.7; pointer-events: none; }
+.waypoint-orb { position: relative; }
+.waypoint.is-recommended .waypoint-orb { animation: next-glow 3.6s ease-in-out infinite; }
+@keyframes next-glow {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(59, 79, 196, 0)); }
+  50% { filter: drop-shadow(0 0 8px rgba(59, 79, 196, 0.45)); }
+}
+.graph-panel .react-flow__edge.edge-projected .react-flow__edge-path { stroke: #6a4bc9; stroke-width: 3; opacity: 0.95; stroke-dasharray: none; filter: drop-shadow(0 0 4px rgba(106, 75, 201, 0.4)); }
+.graph-panel .react-flow__edge.edge-muted .react-flow__edge-path { stroke: #a9a7bb; stroke-width: 1.2; opacity: 0.4; stroke-dasharray: 2 5; filter: none; }
+.waypoint.is-muted { opacity: 0.5; filter: saturate(0.35); transition: opacity 400ms ease, filter 400ms ease; }
+.waypoint.is-muted:hover, .waypoint.is-muted.is-selected { opacity: 0.9; }
+.node-muted-note { margin-top: 2px; font-size: 11.5px; letter-spacing: 0.04em; color: var(--ink-on-dark-muted); }
+
+/* After a result: ripple on the orb, a status-change label, and edges around the node draw in. */
+.orb-ripple { position: absolute; inset: -2px; border: 2px solid var(--tone); border-radius: 50%; pointer-events: none; animation: orb-ripple 1.6s ease-out 2 both; }
+@keyframes orb-ripple { from { transform: scale(1); opacity: 0.8; } to { transform: scale(2.3); opacity: 0; } }
+.node-change { margin-top: 3px; padding: 1px 8px; border: 1px solid var(--tone); border-radius: 999px; background: rgba(251, 249, 243, 0.95); font-size: 11.5px; font-weight: 600; color: var(--tone); white-space: nowrap; animation: change-in 520ms var(--ease-out) both; }
+@keyframes change-in { from { opacity: 0; transform: translateY(-3px) scale(0.92); } to { opacity: 1; transform: none; } }
+.waypoint.is-resolving .waypoint-orb { box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 22%, transparent), 0 0 18px color-mix(in srgb, var(--tone) 40%, transparent); }
+.graph-panel .react-flow__edge.edge-adapt .react-flow__edge-path { stroke-dasharray: 1 !important; stroke-dashoffset: 0; animation: edge-draw 1100ms ease-out 120ms both; }
+@keyframes edge-draw { from { stroke-dashoffset: 1; opacity: 0.2; } to { stroke-dashoffset: 0; } }
+
+.hud-refresh { animation: hud-refresh 520ms var(--ease-out) both; }
+@keyframes hud-refresh { from { opacity: 0.4; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.why-loading { color: var(--ink-muted); font-style: italic; animation: why-pulse 1.8s ease-in-out infinite; }
+.why-dots i { font-style: normal; animation: why-dot 1.2s ease-in-out infinite; }
+.why-dots i:nth-child(2) { animation-delay: 150ms; }
+.why-dots i:nth-child(3) { animation-delay: 300ms; }
+@keyframes why-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes why-dot { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+.legend-projected-swatch { width: 16px; height: 0; border-top: 3px solid #6a4bc9; border-radius: 2px; }
+.legend-muted-swatch { width: 16px; height: 0; border-top: 2px dotted #a9a7bb; }
+.legend-projected { border-color: rgba(106, 75, 201, 0.45); }
+.legend-muted { border-color: rgba(169, 167, 187, 0.6); color: var(--ink-muted); }
+
+.strategy-panel { position: absolute; top: 40px; left: 28px; z-index: 5; width: min(300px, calc(100% - 420px)); padding: 11px 14px; border: 1px solid rgba(106, 75, 201, 0.28); border-left: 2px solid #6a4bc9; border-radius: 10px; background: rgba(251, 249, 243, 0.9); }
+.strategy-panel .panel-eyebrow { font-size: 12.5px; color: #6a4bc9; }
+.strategy-panel h3 { margin-top: 1px; font-size: 14.5px; font-weight: 500; }
+.strategy-basis, .strategy-empty, .strategy-muted, .strategy-summary { margin-top: 4px; font-size: 12.5px; line-height: 1.4; color: var(--ink-muted); }
+.strategy-chain { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.strategy-chain li:not(:last-child)::after { content: '→'; margin-left: 6px; color: #6a4bc9; font-size: 12px; }
+.strategy-chip { padding: 2px 9px; border: 1px solid rgba(106, 75, 201, 0.4); border-radius: 999px; background: transparent; color: var(--ink); font-size: 12.5px; cursor: pointer; }
+.strategy-chip:hover, .strategy-chip.is-selected { background: rgba(106, 75, 201, 0.12); }
+
+.update-panel { padding-right: 38px; animation: hud-refresh 420ms var(--ease-out) both; }
+.panel-close { position: absolute; top: 6px; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-muted); font-size: 20px; line-height: 1; cursor: pointer; transition: background 120ms ease, color 120ms ease; }
+.panel-close:hover { background: var(--accent-soft); color: var(--ink); }
+.update-pill { position: absolute; left: 28px; bottom: 18px; z-index: 6; padding: 6px 14px; border: 1px solid rgba(25, 22, 47, 0.25); border-radius: 999px; background: rgba(251, 249, 243, 0.92); color: var(--accent-strong); font-size: 13px; cursor: pointer; }
+.update-pill:hover { background: var(--accent-soft); }
+
 @media (prefers-reduced-motion: reduce) {
-  .waypoint, .graph-panel .react-flow__edges { animation: none; }
+  .waypoint.is-recommended .waypoint-orb, .orb-ripple, .node-change, .hud-refresh, .update-panel, .why-loading, .why-dots i { animation: none; }
+  .graph-panel .react-flow__edge.edge-adapt .react-flow__edge-path { animation: none; stroke-dasharray: none !important; }
+  .waypoint { animation: none; }
   .details-dock, .details-dock-inner, .hud-more, .hud-chevron { transition-duration: 1ms; transition-delay: 0ms; }
 }

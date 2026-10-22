@@ -7,6 +7,7 @@ const EDGE_QUIET = '#6b6a85'
 const EDGE_RISK = '#c25a4e'
 const EDGE_TRAIL = '#3b4fc4'
 const EDGE_LIT = '#3b4fc4'
+const EDGE_PROJECTED = '#6a4bc9'
 const TONE_HEX = { supported: '#4d8a5a', uncertain: '#b9822a', contradicted: '#c25a4e', unexplored: '#77759a' }
 
 export function buildLinks(scientificNodes) {
@@ -116,7 +117,14 @@ function computeLayout(scientificNodes, links) {
   return { positions, layers }
 }
 
-export function createGraphNodes(scientificNodes, recommendedNodeId, selectedNodeId, weakNodeIds = new Set()) {
+// `roles` carries the strategic layer, all of it read from the backend (see plannerPaths.js):
+//   weakNodeIds       contradicted nodes (evidence status, shown as a red cue)
+//   projectedNodeIds  nodes on the backend's current projected path (empty if not provided)
+//   mutedNodes        Map(nodeId -> reason) the backend classed as optional / redundant / passed
+//   change            { nodeId, fromStatus, toStatus, key } for the node that just resolved
+// Evidence status (supported / uncertain / ...) and strategic role are kept as separate data.
+export function createGraphNodes(scientificNodes, recommendedNodeId, selectedNodeId, roles = {}) {
+  const { weakNodeIds = new Set(), projectedNodeIds = new Set(), mutedNodes = new Map(), change = null } = roles
   const links = buildLinks(scientificNodes)
   const { positions, layers } = computeLayout(scientificNodes, links)
   return scientificNodes.map((node) => ({
@@ -128,6 +136,9 @@ export function createGraphNodes(scientificNodes, recommendedNodeId, selectedNod
       node,
       isRecommended: node.id === recommendedNodeId,
       isWeak: weakNodeIds.has(node.id) && node.id !== recommendedNodeId,
+      isProjected: projectedNodeIds.has(node.id),
+      mutedReason: mutedNodes.get(node.id) ?? null,
+      change: change && change.nodeId === node.id ? change : null,
       layer: layers[node.id] ?? 0,
     },
   }))
@@ -148,21 +159,35 @@ function reachableFrom(startId, links) {
   return seen
 }
 
-export function createGraphEdges(scientificNodes, recommendedNodeId, selectedNodeId, weakNodeIds = new Set()) {
+// Edge emphasis. `kind` is the base look; `edge-projected` / `edge-muted` are strategic
+// overlays driven only by backend data:
+//   lit       touches the recommended node
+//   risk      touches a contradicted node
+//   trail     lies downstream of the recommended node
+//   projected on the backend's projected path (overlay, combines with the base kind)
+//   muted     touches a backend-muted node and is not on the projected path
+export function createGraphEdges(scientificNodes, recommendedNodeId, selectedNodeId, roles = {}) {
+  const { weakNodeIds = new Set(), projectedEdgeKeys = new Set(), mutedNodes = new Map(), change = null } = roles
   const nodeById = Object.fromEntries(scientificNodes.map((node) => [node.id, node]))
   const links = buildLinks(scientificNodes)
-  const downstreamOfRecommended = recommendedNodeId === undefined || recommendedNodeId === null ? new Set() : reachableFrom(recommendedNodeId, links)
+  const hasRecommendation = recommendedNodeId !== undefined && recommendedNodeId !== null
+  const downstreamOfRecommended = hasRecommendation ? reachableFrom(recommendedNodeId, links) : new Set()
 
   return links.map(([source, target]) => {
+    const projected = projectedEdgeKeys.has(`${source}>${target}`)
+    const muted = !projected && (mutedNodes.has(source) || mutedNodes.has(target))
+
     let kind = 'quiet'
-    if (recommendedNodeId !== undefined && recommendedNodeId !== null && (source === recommendedNodeId || target === recommendedNodeId)) kind = 'lit'
+    if (hasRecommendation && (source === recommendedNodeId || target === recommendedNodeId)) kind = 'lit'
     else if (weakNodeIds.has(source) || weakNodeIds.has(target)) kind = 'risk'
     else if (downstreamOfRecommended.has(target) && (source === recommendedNodeId || downstreamOfRecommended.has(source))) kind = 'trail'
     else if (selectedNodeId && (source === selectedNodeId || target === selectedNodeId)) kind = 'selected'
 
     const sourceNode = nodeById[source]
     const tone = TONE_HEX[sourceNode?.status] ?? EDGE_QUIET
-    const color = kind === 'lit' ? EDGE_LIT : kind === 'risk' ? EDGE_RISK : kind === 'trail' ? EDGE_TRAIL : tone
+    const color = projected ? EDGE_PROJECTED : kind === 'lit' ? EDGE_LIT : kind === 'risk' ? EDGE_RISK : kind === 'trail' ? EDGE_TRAIL : tone
+    // After a result, edges around the node that just resolved redraw.
+    const adapting = change && (source === change.nodeId || target === change.nodeId)
 
     return {
       id: `${source}-${target}`,
@@ -170,9 +195,16 @@ export function createGraphEdges(scientificNodes, recommendedNodeId, selectedNod
       target,
       type: 'default',
       animated: false,
-      className: `edge-${kind} tone-${sourceNode?.status ?? 'unexplored'}${sourceNode?.status === 'unexplored' ? ' edge-dashed' : ''}`,
+      className: [
+        `edge-${kind}`,
+        `tone-${sourceNode?.status ?? 'unexplored'}`,
+        sourceNode?.status === 'unexplored' ? 'edge-dashed' : '',
+        projected ? 'edge-projected' : '',
+        muted ? 'edge-muted' : '',
+        adapting || (projected && change) ? 'edge-adapt' : '',
+      ].filter(Boolean).join(' '),
       style: { '--ew': (1.2 + (sourceNode?.confidence ?? 0.5) * 1.4).toFixed(2) },
-      markerEnd: { type: MarkerType.Arrow, width: 11, height: 11, strokeWidth: 1.4, color },
+      markerEnd: { type: MarkerType.Arrow, width: 11, height: 11, strokeWidth: 1.4, color: muted ? '#a9a7bb' : color },
     }
   })
 }
