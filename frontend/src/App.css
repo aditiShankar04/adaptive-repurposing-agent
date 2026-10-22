@@ -287,7 +287,6 @@
 .outlook-group li .status-icon { flex: none; color: var(--tone); }
 .final-decision-card.is-no-go { border-color: rgba(194, 90, 78, 0.45); border-top-color: #c25a4e; }
 .final-decision-card.is-no-go h2 { color: #9c2222; }
-.update-note { font-style: italic; }
 
 .outcome-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .outcome-actions .outcome-form, .outcome-actions .run-control { margin-top: 0; }

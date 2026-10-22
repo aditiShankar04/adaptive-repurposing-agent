@@ -18,55 +18,21 @@ const nodeTypes = { decision: DecisionNode }
 const DOCK_TRANSITION_MS = 460
 const FIT_OPTIONS = { padding: 0.18 }
 
-function formatConfidence(confidence) {
-  return `${Math.round(confidence * 100)}%`
-}
-
-function UpdatePanel({ lastUpdate, plannerState, historicalReplay, onDismiss }) {
-  if (!lastUpdate) return null
-
-  const historicalEvidence = lastUpdate.historical_evidence
-  const displayedUpdate = lastUpdate.transition ?? lastUpdate
-  const newRecommendation = plannerState.ranked_experiments[0]
-  const closeButton = (
-    <button type="button" className="panel-close" onClick={onDismiss} aria-label="close this update (the planner state is kept)">
-      <span aria-hidden="true">×</span>
-    </button>
-  )
-
-  // A revealed historical result shows only what was observed.
-  if (historicalEvidence) {
-    return (
-      <section className="update-panel" aria-label="historical result">
-        {closeButton}
-        <h3 className="update-title">{displayedUpdate.experiment.name}</h3>
-        <p>historical outcome: <strong>{String(historicalEvidence.historical_outcome).replaceAll('_', ' ')}</strong></p>
-        {historicalEvidence.summary ? <p>{historicalEvidence.summary}</p> : null}
-      </section>
-    )
-  }
-
-  // Only manual results inside a historical scenario get a card (explored, not history);
-  // prospective scenarios show no update card.
-  if (!historicalReplay) return null
+// Only a revealed historical result gets a card, and it shows only what was observed.
+// Manual (explored) results update the graph without a card.
+function HistoricalResultPanel({ lastUpdate, onDismiss }) {
+  const historicalEvidence = lastUpdate?.historical_evidence
+  if (!historicalEvidence) return null
+  const experiment = (lastUpdate.transition ?? lastUpdate).experiment
 
   return (
-    <section className="update-panel" aria-label="explored outcome">
-      {closeButton}
-      <p className="panel-eyebrow">explored outcome</p>
-      <p className="update-note">this result was supplied by the user to explore how labyrinth would adapt.</p>
-      <h3>{displayedUpdate.experiment.name}</h3>
-      <p>result: <strong>{displayedUpdate.submitted_result.result}</strong> · qc: <strong>{displayedUpdate.submitted_result.qc}</strong></p>
-      <p>{displayedUpdate.update_details.reason}</p>
-      <p>
-        node: <strong>{displayedUpdate.node_before_update.status}</strong> ({formatConfidence(displayedUpdate.node_before_update.confidence)}){' '}
-        → <strong>{displayedUpdate.node_after_update.status}</strong> ({formatConfidence(displayedUpdate.node_after_update.confidence)})
-      </p>
-      {displayedUpdate.update_details.recommended_action ? <p><strong>{displayedUpdate.update_details.recommended_action}</strong></p> : null}
-      {displayedUpdate.update_details.action ? <p><strong>action: {displayedUpdate.update_details.action}</strong></p> : null}
-      {displayedUpdate.update_details.confirmed_failure ? <p><strong>confirmed failure: {displayedUpdate.update_details.confirmed_action}</strong></p> : null}
-      {displayedUpdate.update_details.final_decision ? <p><strong>final decision: {displayedUpdate.update_details.final_decision}</strong></p> : null}
-      {newRecommendation ? <p>new quest: <strong>{newRecommendation.experiment.name}</strong></p> : null}
+    <section className="update-panel" aria-label="historical result">
+      <button type="button" className="panel-close" onClick={onDismiss} aria-label="close this result (the planner state is kept)">
+        <span aria-hidden="true">×</span>
+      </button>
+      <h3 className="update-title">{experiment.name}</h3>
+      <p>historical outcome: <strong>{String(historicalEvidence.historical_outcome).replaceAll('_', ' ')}</strong></p>
+      {historicalEvidence.summary ? <p>{historicalEvidence.summary}</p> : null}
     </section>
   )
 }
@@ -190,7 +156,7 @@ function ResearchWorkspace({
     setSelectedNodeId(null)
   }
 
-  const hasUpdateCard = !isPreview && Boolean(lastUpdate) && historicalReplay
+  const hasUpdateCard = !isPreview && Boolean(lastUpdate?.historical_evidence)
   const updateVisible = hasUpdateCard && !updateDismissed
   useEffect(() => {
     if (!detailsOpen && !updateVisible && !endDialogOpen) return undefined
@@ -304,15 +270,10 @@ function ResearchWorkspace({
           />
 
           {updateVisible && (
-            <UpdatePanel
-              lastUpdate={lastUpdate}
-              plannerState={plannerState}
-              historicalReplay={historicalReplay}
-              onDismiss={() => setDismissedUpdate(lastUpdate)}
-            />
+            <HistoricalResultPanel lastUpdate={lastUpdate} onDismiss={() => setDismissedUpdate(lastUpdate)} />
           )}
           {hasUpdateCard && updateDismissed && (
-            <button type="button" className="update-pill" onClick={() => setDismissedUpdate(null)}>view last result</button>
+            <button type="button" className="update-pill" onClick={() => setDismissedUpdate(null)}>view historical result</button>
           )}
         </section>
         {endDialogOpen && (
